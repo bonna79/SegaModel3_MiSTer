@@ -38,8 +38,21 @@ jobs:
         if: steps.qcache.outputs.cache-hit != 'true'
         run: |
           mkdir -p /tmp/qi && cd /tmp/qi
-          curl -fsSLO "$BASE/QuartusLiteSetup-17.0.0.595-linux.run"
-          curl -fsSLO "$BASE/cyclonev-17.0.0.595.qdz"
+          # Intel has moved these files more than once: try each host, and keep
+          # a download only if it is the real file, not an HTML page.
+          get() {
+            for host in https://downloads.intel.com https://download.altera.com http://download.altera.com; do
+              url="$host/akdlm/software/acdsinst/17.0/595/ib_installers/$1"
+              echo "trying $url"
+              curl -fL --retry 3 -A "Mozilla/5.0" -o "$1" "$url" || continue
+              size=$(stat -c %s "$1"); echo "  $size bytes: $(file -b "$1" | cut -c1-60)"
+              if [ "$size" -gt "$2" ]; then return 0; fi
+              head -c 400 "$1"; echo
+            done
+            return 1
+          }
+          get QuartusLiteSetup-17.0.0.595-linux.run 1000000000
+          get cyclonev-17.0.0.595.qdz 300000000
           chmod +x QuartusLiteSetup-17.0.0.595-linux.run
           sudo ./QuartusLiteSetup-17.0.0.595-linux.run --mode unattended --accept_eula 1 \
             --installdir "$QDIR" --disable-components quartus_help,modelsim_ase,modelsim_ae
