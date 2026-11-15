@@ -1,0 +1,65 @@
+# Build Model3.rbf with Quartus Prime Lite 17.0 on a GitHub-hosted runner,
+# using the Quartus image MiSTer-devel's own CI uses (theypsilon/quartus-lite-c5).
+# Intel's direct installer URLs now answer 403 to scripted downloads.
+# Started by hand (Actions tab -> "Quartus build" -> Run workflow) or by a
+# push to a ci-* branch.
+name: Quartus build
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Fitter seed (Model3.qsf has 1)
+        default: "1"
+      image:
+        description: Quartus image tag (17.0 or 17.0.2)
+        default: "17.0"
+  push:
+    branches: ["ci-*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    env:
+      IMAGE: theypsilon/quartus-lite-c5:${{ github.event.inputs.image || '17.0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull Quartus image
+        run: docker pull "$IMAGE"
+
+      - name: Quartus version
+        run: docker run --rm "$IMAGE" quartus_sh --version || docker run --rm "$IMAGE" -- quartus_sh --version
+
+      - name: Set fitter seed
+        run: |
+          SEED="${{ github.event.inputs.seed }}"
+          if [ -n "$SEED" ] && [ "$SEED" != "1" ]; then
+            sed -i "s/^set_global_assignment -name SEED .*/set_global_assignment -name SEED $SEED/" Model3.qsf
+          fi
+          grep -n "name SEED" Model3.qsf
+
+      - name: Compile
+        run: |
+          docker run --rm -v "$PWD:/project" -w /project --user "$(id -u):$(id -g)" "$IMAGE" \
+            quartus_sh --flow compile Model3
+
+      - name: Fit and timing summary
+        if: always()
+        run: |
+          cat output_files/Model3.fit.summary || true
+          grep -m1 -B2 -A8 "Error (170012)" output_files/Model3.fit.rpt || true
+          grep -A30 "Setup Summary" output_files/Model3.sta.rpt | head -40 || true
+          grep -A20 "Hold Summary" output_files/Model3.sta.rpt | head -30 || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: Model3-${{ github.sha }}
+          path: |
+            output_files/Model3.rbf
+            output_files/*.summary
+            output_files/*.sta.rpt
+            output_files/*.fit.rpt
+          if-no-files-found: warn
