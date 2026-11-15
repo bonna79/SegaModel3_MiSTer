@@ -437,7 +437,7 @@ module m3_system
   localparam bit FB_ON  = FBUSY   && !RELEASE;
   localparam bit XC_ON  = XCAP    && OV_ON;
 
-  ppc_cpu #(.PVR(PVR), .PVR2(PVR2), .ISB(ISB)) u_cpu (
+  ppc_cpu #(.PVR(PVR), .PVR2(PVR2), .ISB(ISB), .FAST(1'b0)) u_cpu (
     .clk, .rst(rst_cpu), .pvr_alt(step2),
     .m_req(m_req[0]), .m_cmd(m_cmd[0]), .m_addr(m_addr[0]), .m_be(m_be[0]), .m_wdata(m_wdata[0]),
     .m_ack(m_ack[0]), .m_wnext(m_wnext[0]), .m_rvalid(m_rvalid[0]), .m_rdata,
