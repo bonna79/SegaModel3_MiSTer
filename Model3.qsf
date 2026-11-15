@@ -72,6 +72,7 @@ set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
 
 # Disable ALSA audio output to save some resources
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
+set_global_assignment -name VERILOG_MACRO "M3_INP_LEAN=1"
 
 source sys/sys.tcl
 # Dual SDRAM (D-26) stays off until the second SDRAM is fitted: the analog I/O
