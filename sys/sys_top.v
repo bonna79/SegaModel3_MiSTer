@@ -1253,10 +1253,14 @@ always @(posedge clk_vid) begin
 	dv_vs  <= dv_vs2;
 end
 
+`ifdef M3_NO_VGA
+	assign {dv_data_osd, dv_hs_osd, dv_vs_osd, dv_cs_osd } = 0;   // M3_NO_VGA: no analog path, no direct video
+`else
 `ifndef MISTER_DISABLE_YC
 	assign {dv_data_osd, dv_hs_osd, dv_vs_osd, dv_cs_osd } = ~yc_en ? {vga_data_osd, vga_hs_osd, vga_vs_osd, vga_cs_osd } : {yc_o, yc_hs, yc_vs, yc_cs };
 `else
 	assign {dv_data_osd, dv_hs_osd, dv_vs_osd, dv_cs_osd } = {vga_data_osd, vga_hs_osd, vga_vs_osd, vga_cs_osd };
+`endif
 `endif
 
 wire hdmi_tx_clk;
@@ -1518,6 +1522,12 @@ reg  [39:0] PhaseInc;
 	wire cs1 = vgas_en ? vgas_cs : vga_cs;
 	wire de1 = vgas_en ? vgas_de : vga_de;
 
+`ifdef M3_NO_VGA
+	// M3_NO_VGA (test builds): the analog output is not driven, so the VGA chain is pruned
+	assign {VGA_VS, VGA_HS} = 2'bZZ;
+	assign {VGA_R, VGA_G, VGA_B} = 18'bZ;
+	wire [1:0] vga_r = 2'd0, vga_g = 2'd0, vga_b = 2'd0;
+`else
 	assign VGA_VS = av_dis ? 1'bZ      :(((vgas_en ? (~vgas_vs ^ VS[12])                         : VGA_DISABLE ? 1'd1 : ~vga_vs) | csync_en) & subcarrier_out);
 	assign VGA_HS = av_dis ? 1'bZ      :  (vgas_en ? ((csync_en ? ~vgas_cs : ~vgas_hs) ^ HS[12]) : VGA_DISABLE ? 1'd1 : (csync_en ? ~vga_cs : ~vga_hs));
 	assign VGA_R  = av_dis ? 6'bZZZZZZ :   vgas_en ? vgas_o[23:18]                               : VGA_DISABLE ? 6'd0 : vga_o[23:18];
@@ -1527,6 +1537,7 @@ reg  [39:0] PhaseInc;
 	wire [1:0] vga_r  = vgas_en ? vgas_o[17:16] : VGA_DISABLE ? 2'd0 : vga_o[17:16];
 	wire [1:0] vga_g  = vgas_en ? vgas_o[9:8]   : VGA_DISABLE ? 2'd0 : vga_o[9:8];
 	wire [1:0] vga_b  = vgas_en ? vgas_o[1:0]   : VGA_DISABLE ? 2'd0 : vga_o[1:0];
+`endif
 `endif
 
 reg video_sync = 0;
