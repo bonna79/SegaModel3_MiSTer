@@ -50,8 +50,8 @@ jobs:
         run: |
           cat output_files/Model3.fit.summary || true
           grep -m1 -B2 -A8 "Error (170012)" output_files/Model3.fit.rpt || true
-          grep -A30 "Setup Summary" output_files/Model3.sta.rpt | head -40 || true
-          grep -A20 "Hold Summary" output_files/Model3.sta.rpt | head -30 || true
+          # worst slack per clock and corner, readable from the job log
+          grep -B1 -A2 "^Type" output_files/Model3.sta.summary | grep -E "Type|Slack" | paste - - | grep -E "Setup|Hold|Recovery" || true
 
       - uses: actions/upload-artifact@v4
         if: always()
