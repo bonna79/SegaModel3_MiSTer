@@ -1125,12 +1125,14 @@ module m3_system
   assign d_we[0] = 1'b0; assign d_din[0] = '0; assign d_be[0] = 8'hFF;
 
   // the CPU's busy time per frame (R104): vblank to the first retirement in a wait loop
-  logic [31:0] fb_mm, fb_lo, fb_hi, fb_last;
+  logic [31:0] fb_mm, fb_lo, fb_hi, fb_last, fb_idle, fb_idlev, fb_nvb;
   generate if (FB_ON) begin : g_fbusy
     m3_frame_busy #(.CLK_HZ(CLK_HZ)) u_fbusy (.clk, .rst, .vblank_start, .step2, .rt_valid, .rt_pc,
-      .o_minmax(fb_mm), .o_bins_lo(fb_lo), .o_bins_hi(fb_hi), .o_last(fb_last));
+      .o_minmax(fb_mm), .o_bins_lo(fb_lo), .o_bins_hi(fb_hi), .o_last(fb_last),
+      .o_idle(fb_idle), .o_idlev(fb_idlev), .o_nvb(fb_nvb));
   end else begin : g_nofbusy
     assign fb_mm = '0; assign fb_lo = '0; assign fb_hi = '0; assign fb_last = '0;
+    assign fb_idle = '0; assign fb_idlev = '0; assign fb_nvb = '0;
   end endgenerate
 
   logic [5:0]  ov_idx;
@@ -1183,10 +1185,12 @@ module m3_system
         6'd22: ov_v <= cpu_wd_max;
         6'd23: ov_v <= {16'd0, cpi_q8};             // CPI x 256, the last second
         // row 6: CPU performance, the last second: cycles, instructions, data memory wait, fetch waiting
-        6'd24: ov_v <= perf[0];
-        6'd25: ov_v <= perf[1];
-        6'd26: ov_v <= perf[6];
-        6'd27: ov_v <= perf[8];
+        // (diagnostic, without CPI_MON: with FBUSY, the last second's clocks in any wait loop, in a vblank poll,
+        // the vblanks, and the clock rate)
+        6'd24: ov_v <= (FB_ON && !MON_ON) ? fb_idle  : perf[0];
+        6'd25: ov_v <= (FB_ON && !MON_ON) ? fb_idlev : perf[1];
+        6'd26: ov_v <= (FB_ON && !MON_ON) ? fb_nvb   : perf[6];
+        6'd27: ov_v <= (FB_ON && !MON_ON) ? 32'(CLK_HZ) : perf[8];
         // row 7: redirects, load-use, mul/div wait, decode starved
         // (with FBUSY, R104: the CPU's busy time a frame, the last second: {min, max} and the last frame in
         // units of 256 clocks; frames by vblanks needed {<0.9, 0.9-1, 1-1.1, 1.1-1.25}, {1.25-1.5, >=1.5, 0, frames})

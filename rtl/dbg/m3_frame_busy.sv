@@ -48,8 +48,27 @@ module m3_frame_busy #(
   output logic [31:0] o_minmax,       // {min, max}, units of 256 clocks
   output logic [31:0] o_bins_lo,      // {< 0.9, 0.9-1.0, 1.0-1.1, 1.1-1.25} frames
   output logic [31:0] o_bins_hi,      // {1.25-1.5, >= 1.5, 0, frames}
-  output logic [31:0] o_last          // the last frame's busy time, units of 256 clocks
+  output logic [31:0] o_last,         // the last frame's busy time, units of 256 clocks
+  // (diagnostic) the last second: clocks whose last retirement was in any of the game's wait loops of
+  // tools/mame-census/README.md (vblank and decrementer polls, count-downs); the same for the vblank polls
+  // alone; and the vblanks counted
+  output logic [31:0] o_idle,
+  output logic [31:0] o_idlev,
+  output logic [31:0] o_nvb
 );
+
+  // every wait loop of the census, by game (Daytona 2: 4C6CC-4C6D4, 4C73C-4C744, 4C754-4C760, 541C-5428;
+  // VF3: 1E928-1E930, 1E97C-1E984, 1E9DC-1E9E4, 1E9FC-1EA04, 2518-251C)
+  function automatic logic wany(input logic [31:0] pc, input logic s2);
+    if (pc[31:20] != 12'd0) wany = 1'b0;
+    else if (!s2)
+      wany = (pc[19:0] >= 20'h1E928 && pc[19:0] <= 20'h1E930) || (pc[19:0] >= 20'h1E97C && pc[19:0] <= 20'h1E984) ||
+             (pc[19:0] >= 20'h1E9DC && pc[19:0] <= 20'h1E9E4) || (pc[19:0] >= 20'h1E9FC && pc[19:0] <= 20'h1EA04) ||
+             (pc[19:0] >= 20'h02518 && pc[19:0] <= 20'h0251C);
+    else
+      wany = (pc[19:0] >= 20'h4C6CC && pc[19:0] <= 20'h4C6D4) || (pc[19:0] >= 20'h4C73C && pc[19:0] <= 20'h4C744) ||
+             (pc[19:0] >= 20'h4C754 && pc[19:0] <= 20'h4C760) || (pc[19:0] >= 20'h0541C && pc[19:0] <= 20'h05428);
+  endfunction
 
   // one video frame in units of 256 clocks, and the bins' edges
   // (int arithmetic: x 278144 / 1000 taken as x 278 + x 144 / 1000, the same value, so it stays below 2^31
@@ -148,6 +167,26 @@ module m3_frame_busy #(
         o_bins_hi <= {bn[4], bn[5], 8'd0, nf};
         mn <= 16'hFFFF; mx <= 16'd0; nf <= 8'd0;
         for (int k = 0; k < 6; k++) bn[k] <= 8'd0;
+      end
+    end
+  end
+
+  // (diagnostic) idle clocks: since the last retirement, in a wait loop (any / a vblank poll)
+  logic        ia, iv;
+  logic [31:0] c_idle, c_idlev, c_nvb;
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      ia <= 1'b0; iv <= 1'b0; c_idle <= '0; c_idlev <= '0; c_nvb <= '0;
+      o_idle <= '0; o_idlev <= '0; o_nvb <= '0;
+    end else begin
+      if (rt_valid) begin ia <= wany(rt_pc, step2); iv <= win(rt_pc, step2); end
+      if (tick) begin
+        o_idle <= c_idle; o_idlev <= c_idlev; o_nvb <= c_nvb;
+        c_idle <= '0; c_idlev <= '0; c_nvb <= '0;
+      end else begin
+        c_idle  <= c_idle + {31'd0, ia};
+        c_idlev <= c_idlev + {31'd0, iv};
+        c_nvb   <= c_nvb + {31'd0, vblank_start};
       end
     end
   end
