@@ -158,6 +158,10 @@ module ppc_core
   // first EX cycle or the next (it then leaves EX a cycle before the write, and that write does not clear frD's
   // pending bit: wsk_q); 0: until the write lands as it enters ID (see "Scoreboard")
   parameter bit FWW = 1'b1,
+  // FSF = 1: an stfs whose value needs no denormalising (biased exponent above 896, or 0: a zero, or a double
+  // denormal, which stores a zero) leaves EX in its first cycle, its word frS[0-1] || frS[5-34] taken straight
+  // from the operand register (PEM D.7); 0: every stfs takes a second EX cycle for the conversion (u_stfs)
+  parameter bit FSF = 1'b1,
   // LRA = 1: the LR / CTR look-ahead (603e 6.3.1, 6.4.1.1: the BPU executes a bclr / bcctr as it is fetched,
   // with the LR or CTR from its rename register or the architected one). A bclr or bcctr the rule predicts taken
   // whose target fetch knows is a soft redirect to it, as a b is (see "LR / CTR look-ahead"); 0: it is predicted
@@ -314,6 +318,7 @@ module ppc_core
   logic        ex_fma, ex_div, ex_misc, ex_fpw, ex_fcmp, ex_fsu, ex_fpser;
   logic        ex_fst, ex_fpun, ex_c2, ex_frc;
   logic        ex_fsw, ex_fsx, ex_f2c, ex_mw;          // waits: FPSCR settled, FPSCR op, second cycle, WB slot
+  logic        ex_sf1, ex_sfz;                         // FSF: a one-cycle stfs; its value's exponent is 0
   logic [2:0]  ex_fsfld;                               // the FPSCR op's field: crfS (mcrfs), else crfD
   logic [2:0]  ex_fsop;
   logic        fp_wait;                                // EX waits on the FPU (below)
@@ -3040,6 +3045,13 @@ module ppc_core
   wire  [63:0] fa_cap = f_hit_id[0] ? fw_fdt : rf_fa;
   wire  [63:0] fb_cap = f_hit_id[1] ? fw_fdt : rf_fb;
   wire  [63:0] fc_cap = f_hit_id[2] ? fw_fdt : rf_fc;
+  // FSF: ID's stfs (a two-cycle uop that is not the small unit's, so not a compare) whose value needs no
+  // denormalising, from the value its store data register takes (a store's frS is never bypassed: it is
+  // the file's or the write port's, fc_cap). Exponent 0 is a zero or a double denormal, both stored as
+  // the signed zero (PEM D.7's case and the undefined case's zero), so the word is the sign and 31 zeros
+  wire  [10:0] sf_e   = fc_cap[62:52];
+  wire         sf_one = FSF && q_pd.ff2c && !q_pd.fmsc && (sf_e > 11'd896 || sf_e == 11'd0);
+  wire         q_f2c  = q_pd.ff2c && !sf_one;         // ID's uop takes a second EX cycle
   // The fast route (fpu_fast_route) for these operands, without testing 64
   // bits after the file's read: each FPR carries !fpu_sgl_val of its value
   // (ppc_fpregfile, written below), the forward's values are tested from
@@ -3197,7 +3209,18 @@ module ppc_core
   logic [31:0] stfs_w;
   ppc_fpu_ldst #(.PIPE (1'b1)) u_stfs (.clk (clk), .lfs_word (32'd0), .lfs_dbl (), .stfs_dbl (fc_q), .stfs_word (stfs_w));
   always_comb
-    fsv = ex_u.fiw ? fc_q[31:0] : ex_u.fdbl ? (ex_first ? fc_q[63:32] : fc_q[31:0]) : stfs_w;
+    fsv = ex_u.fiw ? fc_q[31:0] : ex_u.fdbl ? (ex_first ? fc_q[63:32] : fc_q[31:0]) :
+          ex_sf1 ? {fc_q[63], ex_sfz ? 31'd0 : {fc_q[62], fc_q[58:29]}} : stfs_w;
+`ifdef VERILATOR
+  // FSF: the one-cycle word is u_stfs's (the conversion of the same register, a cycle later)
+  logic        sf_chk;
+  logic [31:0] sf_w1;
+  always_ff @(posedge clk) begin
+    sf_chk <= ex_valid && ex_fst && ex_sf1 && !ex_u.fiw && !ex_u.fdbl;
+    sf_w1  <= {fc_q[63], ex_sfz ? 31'd0 : {fc_q[62], fc_q[58:29]}};
+    if (!rst && sf_chk && sf_w1 != stfs_w) $fatal(1, "FSF: the one-cycle stfs word against u_stfs");
+  end
+`endif
 
   // ------------------------------------------- FPU port schedule, FPSCR order
   logic          div_out, inj_q;                       // a divide between its start and its hand-over
@@ -3296,7 +3319,7 @@ module ppc_core
                  (ex_fsx && !(ex_valid && ex_fsop != 3'd0 && fs_idle)) || (ex_f2c && !ex_valid) ||
                  (ex_mw && fw_rk[2]);
   wire  fw_n   = (q_pd.ffma && fw_ba) || (q_pd.fdiv && (fw_ba || (fw_ra & FPRE) != '0)) ||
-                 (((h_fser && !q_pd.ifault) || h_rfi || h_mtmsr) && !fw_idl) || q_pd.ffsx || q_pd.ff2c ||
+                 (((h_fser && !q_pd.ifault) || h_rfi || h_mtmsr) && !fw_idl) || q_pd.ffsx || q_f2c ||
                  (q_pd.fmw && fw_ra[2]);
   always_ff @(posedge clk) fwq <= ex_hold ? fwk_h : fw_n;
   always_comb
@@ -4093,7 +4116,9 @@ module ppc_core
                       (id_u.fp && id_s0 && !msr_q[13] && !q_pd.ifault);   // as ex_kmsr, ex_isync, ex_ifault, ex_fpun
         ex_fsw     <= (h_fser && !q_pd.ifault) || h_rfi || h_mtmsr;
         ex_fsx     <= q_pd.ffsx;
-        ex_f2c     <= q_pd.ff2c;
+        ex_f2c     <= q_f2c;
+        ex_sf1     <= sf_one;
+        ex_sfz     <= sf_e == 11'd0;
         ex_mw      <= q_pd.fmw;
         // (mcrfs from the raw word, not the decoder's fsop: the field is used
         // only by an FPSCR op, and of those only mcrfs has opcode 63, xo 64)
