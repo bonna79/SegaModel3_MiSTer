@@ -52,8 +52,9 @@ module m3_frame_busy #(
 );
 
   // one video frame in units of 256 clocks, and the bins' edges
-  // (int arithmetic: (CLK_HZ / 16000) x 278144 stays below 2^31 up to 123 MHz)
-  localparam int P256 = ((CLK_HZ / 16000) * 278144 / 1000) / 256;   // 6790 at 100 MHz
+  // (int arithmetic: x 278144 / 1000 taken as x 278 + x 144 / 1000, the same value, so it stays below 2^31
+  // past 130 MHz, where (CLK_HZ / 16000) x 278144 overflowed)
+  localparam int P256 = ((CLK_HZ / 16000) * 278 + (CLK_HZ / 16000) * 144 / 1000) / 256;   // 6790 at 100 MHz, 8827 at 130
   localparam logic [15:0] E09 = 16'(P256 * 9 / 10);
   localparam logic [15:0] E10 = 16'(P256);
   localparam logic [15:0] E11 = 16'(P256 * 11 / 10);
