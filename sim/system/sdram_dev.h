@@ -24,8 +24,11 @@ struct sdram_dev {
   // m2_sdram BXOR (study R107): the pins' bank is the address's bank XOR row bits 2:1, so the
   // array, indexed by the address, takes the bank back the same way
   bool bxor = false;
+  // m2_sdram BXC: the pins' chip is the address's chip XOR row bit 3, taken back the same way
+  bool bxc = false;
   uint32_t idx(uint32_t chip, uint32_t bank, uint32_t r, uint32_t c) const {
     if (bxor) bank ^= (r >> 1) & 3u;
+    if (bxc) chip ^= (r >> 3) & 1u;
     return (chip << 25) | (bank << 23) | (r << 10) | c;
   }
 
