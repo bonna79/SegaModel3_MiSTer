@@ -129,6 +129,7 @@ module m3_system
   //   SDR_PRI_CAP  PRI grants in a row while others wait, before one round-robin grant
   //   SDR_AGE      ports taken into the class after waiting SDR_AGE_T clocks (m2_sdram AGE)
   //   SDR_BXOR     bank bits XOR the row's low bits (m2_sdram BXOR): each region spread over the four banks
+  //   SDR_BXC      chip bit XOR the row's bit 3 (m2_sdram BXC): each region spread over both chips' eight banks
   //   SDR_L16      the bus's line fill as one 16-column read (m2_sdram L16, m3_sdr_port L16)
   //   SDR_LW1      a cast-out's beats one a clock into m3_sdr_port, not one in four (m3_sdr_port LW1)
   //   SDR_PAIR     with SDR_L16: the line fill from its critical word, delivered a 32-bit word at a time (m2_sdram PAIR)
@@ -139,6 +140,7 @@ module m3_system
   parameter logic [5:0]  SDR_AGE     = 6'b000000,
   parameter int          SDR_AGE_T   = 48,
   parameter bit          SDR_BXOR    = 1'b0,
+  parameter bit          SDR_BXC     = 1'b0,
   parameter bit          SDR_L16     = 1'b0,
   parameter bit          SDR_LW1     = 1'b0,
   parameter bit          SDR_PAIR    = 1'b0,
@@ -342,7 +344,7 @@ module m3_system
   assign wb_be  = (wb_grant == 3'd4) ? r3_wbb : sp_wbb;
 `endif
   m2_sdram #(.COL_BITS(COL_BITS), .NP(NSP), .T_REFI(T_REFI_C), .T_RC(T_RC_C), .T_RAS(T_RAS_C), .ACK_HOLD(1), .DUAL(DUAL), .MASK_ON_A(DUAL),
-             .PRI(SDR_PRI), .PRI_CAP(SDR_PRI_CAP), .AGE(SDR_AGE), .AGE_T(SDR_AGE_T), .BXOR(SDR_BXOR),
+             .PRI(SDR_PRI), .PRI_CAP(SDR_PRI_CAP), .AGE(SDR_AGE), .AGE_T(SDR_AGE_T), .BXOR(SDR_BXOR), .BXC(SDR_BXC),
              .L16({{(NSP-1){1'b0}}, SDR_L16}), .PAIR({{(NSP-1){1'b0}}, SDR_PAIR}),
 `ifdef M3_R3B
              .WB(NSP'(6'b010001)), .FDSP(SDR_FDSP), .HITRD(SDR_HITRD),
