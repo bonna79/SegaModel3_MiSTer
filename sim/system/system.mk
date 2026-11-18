@@ -163,7 +163,7 @@ SDR_G_all = -GL16=1 -GBXOR=1 -GLW1=1 -GPAIR=1 -GRA=1 -GRA_CONF=1 -GPW=1
 SDR_G_rel = -GL16=1 -GBXOR=1 -GLW1=1 -GPAIR=1 -GPW=1
 # R112: the miss path's clocks, each on the release set and all together (FAST is the bus's; the port
 # bench builds it but has no bus); n112: all five; a112: all five with the read-ahead
-R112_VARIANTS = fwd freq fdsp hitrd fast n112 a112 d112 r3p b112
+R112_VARIANTS = fwd freq fdsp hitrd fast n112 a112 d112 r3p b112 bxc b112c
 SDR_G_fwd = $(SDR_G_rel) -GFWD=1
 SDR_G_freq = $(SDR_G_rel) -GFREQ=1
 SDR_G_fdsp = $(SDR_G_rel) -GFDSP=1
@@ -177,6 +177,9 @@ SDR_G_d112 = $(SDR_G_n112) -GPW_DLY=16
 SDR_G_r3p = $(SDR_G_rel) -GR3P=1
 # b112: the set Model3.sv builds (R112's six, HITRD off)
 SDR_G_b112 = $(SDR_G_rel) -GFWD=1 -GFREQ=1 -GFDSP=1 -GFAST=1 -GPW_DLY=8 -GR3P=1
+# bxc: BXC (the chip hash) alone, and on b112 (the set Model3.sv builds)
+SDR_G_bxc = -GBXC=1
+SDR_G_b112c = $(SDR_G_b112) -GBXC=1
 $(SYS_OBJ)/sdr_%/Vm3_sdr_tb: rtl/sys/m3_sdr_port.sv rtl/mem/m2_sdram.sv sim/system/m3_sdr_tb.sv sim/system/tb_m3_sdr_port.cpp rtl/cpu/ppc_cache_pkg.sv
 	@$(VERILATOR) $(VFLAGS) $(SDR_G_$*) --top-module m3_sdr_tb -CFLAGS "$(CFLAGS_SYS)" --Mdir $(SYS_OBJ)/sdr_$* \
 	  rtl/cpu/ppc_cache_pkg.sv rtl/mem/m2_sdram.sv rtl/sys/m3_sdr_port.sv sim/system/m3_sdr_tb.sv sim/system/tb_m3_sdr_port.cpp >/dev/null
@@ -219,6 +222,10 @@ test_sdr_port_r107: $(foreach v,$(SDR_VARIANTS),$(SYS_OBJ)/sdr_$(v)/Vm3_sdr_tb)
 	./$(SYS_OBJ)/sdr_b112/Vm3_sdr_tb 200000 34 --bxor --lw1 --nowait
 	./$(SYS_OBJ)/sdr_b112/Vm3_sdr_tb 200000 35 --bxor --lw1 --idle 12
 	./$(SYS_OBJ)/sdr_b112/Vm3_sdr_tb 200000 36 --bxor --lw1 --nowait --idle 40
+	./$(SYS_OBJ)/sdr_bxc/Vm3_sdr_tb 200000 37 --bxc
+	./$(SYS_OBJ)/sdr_b112c/Vm3_sdr_tb 200000 38 --bxor --bxc --lw1
+	./$(SYS_OBJ)/sdr_b112c/Vm3_sdr_tb 200000 39 --bxor --bxc --lw1 --nowait
+	./$(SYS_OBJ)/sdr_b112c/Vm3_sdr_tb 200000 40 --bxor --bxc --lw1 --nowait --idle 40
 
 # D-66 / D-68: the second SDRAM's module whole (m3_sdr2: the port, the controller with port 0 alone, the start-up
 # probe), the port bench's transactions against its reference memory, as the build sets it (b112's options). Then
