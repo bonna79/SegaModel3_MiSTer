@@ -34,7 +34,9 @@ module m3_idle_mon #(
   output logic [27:0] o_bdw,          // data memory wait
   output logic [27:0] o_bfw,          // fetch waiting
   output logic [27:0] o_blu,          // load-use bubbles
-  output logic [27:0] o_brd           // redirects
+  output logic [27:0] o_bdma          // (Daytona 2) busy clocks in 52A0-52C4, the wait for the 53C810's end of
+                                      // script (study R115: the frame's DMA to the Real3D); the four counts
+                                      // above leave those clocks out
 );
 
   // Daytona 2: 4C6CC-4C6D4, 4C73C-4C744, 4C754-4C760, 541C-5428;
@@ -50,18 +52,19 @@ module m3_idle_mon #(
              (pc[19:0] >= 20'h4C754 && pc[19:0] <= 20'h4C760) || (pc[19:0] >= 20'h0541C && pc[19:0] <= 20'h05428);
   endfunction
 
-  logic        ia;
+  logic        ia, idm;
   logic [3:0]  pre;
   logic [23:0] cnt;
   logic [26:0] sec;
   logic        tick;
   always_ff @(posedge clk) begin
     if (rst) begin
-      ia <= 1'b0; pre <= '0; cnt <= '0; sec <= '0; tick <= 1'b0; o_idle <= '0;
+      ia <= 1'b0; idm <= 1'b0; pre <= '0; cnt <= '0; sec <= '0; tick <= 1'b0; o_idle <= '0;
     end else begin
       tick <= (sec == 27'(CLK_HZ - 1));
       sec  <= tick ? 27'd0 : sec + 27'd1;
       if (rt_valid) ia <= wany(rt_pc, step2);
+      if (rt_valid) idm <= step2 && rt_pc[31:20] == 12'd0 && rt_pc[19:0] >= 20'h052A0 && rt_pc[19:0] <= 20'h052C4;
       if (tick) begin
         o_idle <= cnt; cnt <= '0; pre <= '0;
       end else if (ia) begin
@@ -76,22 +79,24 @@ module m3_idle_mon #(
   /* verilator lint_off UNUSEDSIGNAL */
   logic [7:0]  ev_q;                   // (uops, decode starved, mul/div wait not counted here)
   /* verilator lint_on UNUSEDSIGNAL */
-  logic [27:0] k_cyc, k_ins, k_dw, k_fw, k_lu, k_rd;
+  logic [27:0] k_cyc, k_ins, k_dw, k_fw, k_lu, k_dm;
   always_ff @(posedge clk) begin
     ev_q <= ev;
     if (rst) begin
-      k_cyc <= '0; k_ins <= '0; k_dw <= '0; k_fw <= '0; k_lu <= '0; k_rd <= '0;
-      o_bcyc <= '0; o_bins <= '0; o_bdw <= '0; o_bfw <= '0; o_blu <= '0; o_brd <= '0;
+      k_cyc <= '0; k_ins <= '0; k_dw <= '0; k_fw <= '0; k_lu <= '0; k_dm <= '0;
+      o_bcyc <= '0; o_bins <= '0; o_bdw <= '0; o_bfw <= '0; o_blu <= '0; o_bdma <= '0;
     end else if (tick) begin
-      o_bcyc <= k_cyc; o_bins <= k_ins; o_bdw <= k_dw; o_bfw <= k_fw; o_blu <= k_lu; o_brd <= k_rd;
-      k_cyc <= '0; k_ins <= '0; k_dw <= '0; k_fw <= '0; k_lu <= '0; k_rd <= '0;
+      o_bcyc <= k_cyc; o_bins <= k_ins; o_bdw <= k_dw; o_bfw <= k_fw; o_blu <= k_lu; o_bdma <= k_dm;
+      k_cyc <= '0; k_ins <= '0; k_dw <= '0; k_fw <= '0; k_lu <= '0; k_dm <= '0;
     end else if (!ia) begin
       k_cyc <= k_cyc + 28'd1;
-      k_ins <= k_ins + {27'd0, ev_q[0]};
-      k_dw  <= k_dw  + {27'd0, ev_q[5]};
-      k_fw  <= k_fw  + {27'd0, ev_q[7]};
-      k_lu  <= k_lu  + {27'd0, ev_q[3]};
-      k_rd  <= k_rd  + {27'd0, ev_q[6]};
+      if (idm) k_dm <= k_dm + 28'd1;
+      else begin
+        k_ins <= k_ins + {27'd0, ev_q[0]};
+        k_dw  <= k_dw  + {27'd0, ev_q[5]};
+        k_fw  <= k_fw  + {27'd0, ev_q[7]};
+        k_lu  <= k_lu  + {27'd0, ev_q[3]};
+      end
     end
   end
 

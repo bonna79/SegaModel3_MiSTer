@@ -1132,9 +1132,9 @@ module m3_system
   logic [27:0] fb_bcyc, fb_bins, fb_bdw, fb_bfw, fb_blu, fb_brd;
   generate if (FB_ON) begin : g_fbusy
     // (diagnostic build) the idle monitor in m3_frame_busy's place: row 7 = {1D, idle clocks / 16}, load-use,
-    // redirects (busy); row 6 = busy clocks, instructions, data memory wait, fetch waiting (busy), all a second
+    // 53C810 DMA wait 52A0-52C4 (busy); row 6 = busy clocks, instructions, data memory wait, fetch waiting (busy), all a second
     m3_idle_mon #(.CLK_HZ(CLK_HZ)) u_idle (.clk, .rst, .step2, .rt_valid, .rt_pc, .o_idle(fb_idle), .ev(cpu_ev),
-      .o_bcyc(fb_bcyc), .o_bins(fb_bins), .o_bdw(fb_bdw), .o_bfw(fb_bfw), .o_blu(fb_blu), .o_brd(fb_brd));
+      .o_bcyc(fb_bcyc), .o_bins(fb_bins), .o_bdw(fb_bdw), .o_bfw(fb_bfw), .o_blu(fb_blu), .o_bdma(fb_brd));
     assign fb_mm = {8'h1D, fb_idle}; assign fb_lo = {4'h0, fb_blu}; assign fb_hi = {4'h0, fb_brd}; assign fb_last = '0;
   end else begin : g_nofbusy
     assign fb_idle = '0;
