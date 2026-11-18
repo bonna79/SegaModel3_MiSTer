@@ -84,6 +84,7 @@ int main(int argc, char **argv) {
   for (int k = 3; k < argc; k++) {
     if (!std::strcmp(argv[k], "--lat") && k + 1 < argc) sd.lat = std::atoi(argv[k + 1]);   // the device's CAS latency (the build's CL)
     if (!std::strcmp(argv[k], "--bxor")) sd.bxor = true;   // the build's BXOR (R107)
+    if (!std::strcmp(argv[k], "--bxc")) sd.bxc = true;     // the build's BXC (chip hash)
     if (!std::strcmp(argv[k], "--lw1")) lw1 = true;        // the build's LW1 (R107)
     if (!std::strcmp(argv[k], "--seq")) seq = true;
     if (!std::strcmp(argv[k], "--nowait")) nowait = true;
