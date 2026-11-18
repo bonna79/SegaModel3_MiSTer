@@ -1127,12 +1127,16 @@ module m3_system
   // the CPU's busy time per frame (R104): vblank to the first retirement in a wait loop
   logic [31:0] fb_mm, fb_lo, fb_hi, fb_last;
   logic [23:0] fb_idle;
+  logic [27:0] fb_bcyc, fb_bins, fb_bdw, fb_bfw, fb_blu, fb_brd;
   generate if (FB_ON) begin : g_fbusy
-    // (diagnostic build) the idle monitor in m3_frame_busy's place: row 7, word 28, the last second's idle clocks / 16
-    m3_idle_mon #(.CLK_HZ(CLK_HZ)) u_idle (.clk, .rst, .step2, .rt_valid, .rt_pc, .o_idle(fb_idle));
-    assign fb_mm = {8'h1D, fb_idle}; assign fb_lo = '0; assign fb_hi = '0; assign fb_last = '0;
+    // (diagnostic build) the idle monitor in m3_frame_busy's place: row 7 = {1D, idle clocks / 16}, load-use,
+    // redirects (busy); row 6 = busy clocks, instructions, data memory wait, fetch waiting (busy), all a second
+    m3_idle_mon #(.CLK_HZ(CLK_HZ)) u_idle (.clk, .rst, .step2, .rt_valid, .rt_pc, .o_idle(fb_idle), .ev(cpu_ev),
+      .o_bcyc(fb_bcyc), .o_bins(fb_bins), .o_bdw(fb_bdw), .o_bfw(fb_bfw), .o_blu(fb_blu), .o_brd(fb_brd));
+    assign fb_mm = {8'h1D, fb_idle}; assign fb_lo = {4'h0, fb_blu}; assign fb_hi = {4'h0, fb_brd}; assign fb_last = '0;
   end else begin : g_nofbusy
     assign fb_idle = '0;
+    assign fb_bcyc = '0; assign fb_bins = '0; assign fb_bdw = '0; assign fb_bfw = '0; assign fb_blu = '0; assign fb_brd = '0;
     assign fb_mm = '0; assign fb_lo = '0; assign fb_hi = '0; assign fb_last = '0;
   end endgenerate
 
@@ -1186,10 +1190,11 @@ module m3_system
         6'd22: ov_v <= cpu_wd_max;
         6'd23: ov_v <= {16'd0, cpi_q8};             // CPI x 256, the last second
         // row 6: CPU performance, the last second: cycles, instructions, data memory wait, fetch waiting
-        6'd24: ov_v <= perf[0];
-        6'd25: ov_v <= perf[1];
-        6'd26: ov_v <= perf[6];
-        6'd27: ov_v <= perf[8];
+        // (diagnostic build, without CPI_MON: FBUSY's busy split instead)
+        6'd24: ov_v <= (FB_ON && !MON_ON) ? {4'h0, fb_bcyc} : perf[0];
+        6'd25: ov_v <= (FB_ON && !MON_ON) ? {4'h0, fb_bins} : perf[1];
+        6'd26: ov_v <= (FB_ON && !MON_ON) ? {4'h0, fb_bdw}  : perf[6];
+        6'd27: ov_v <= (FB_ON && !MON_ON) ? {4'h0, fb_bfw}  : perf[8];
         // row 7: redirects, load-use, mul/div wait, decode starved
         // (with FBUSY, R104: the CPU's busy time a frame, the last second: {min, max} and the last frame in
         // units of 256 clocks; frames by vblanks needed {<0.9, 0.9-1, 1-1.1, 1.1-1.25}, {1.25-1.5, >=1.5, 0, frames})
