@@ -166,6 +166,14 @@ module m2_sdram #(
   // written; only a model that pokes the device's array directly must apply it too (the bench's
   // sdram_dev, bxor). Needs ROW_BITS >= 3. 0: the controller exactly as it was.
   parameter bit            BXOR      = 1'b0,
+  // CHIP HASH (Model 3, bonna79, after study R112's "not done"). With BXC and DUAL the chip bit of every
+  // address is XORed with the row's bit 3 (the byte address's bit 14), as BXOR does the bank bits, so
+  // each region is spread over both chips' eight banks, not one chip's four (work RAM and VRAM all sit
+  // in chip 1). With BXOR a line and its cast-out victim (same bits 11:5) share a {chip, bank} only if
+  // bits 26:24 differ as bits 14:12 do: one pair in eight rather than one in four. A permutation like
+  // BXOR's; a model that pokes the array must apply it too (sdram_dev, bxc). Needs ROW_BITS >= 4.
+  // 0: the controller exactly as it was.
+  parameter bit            BXC       = 1'b0,
   // SIXTEEN-COLUMN LINE READS (Model 3, study R107). A port set in L16 (and in WB) reads sixteen
   // columns on p_long instead of eight, from one dispatch, wrapping inside its 16-column line from
   // the address given (rd_wrap): four-word groups arrive on p_lo three times, the last with p_ack.
@@ -520,10 +528,11 @@ module m2_sdram #(
   logic [15:0]          wr_din_p;
   logic [1:0]           wr_be_p;
 
-  // R107: the bank hash (BXOR above): bank ^= row[2:1]
+  // R107: the bank hash (BXOR above): bank ^= row[2:1]; BXC: chip ^= row[3]
   function automatic logic [AW:1] bhash(input logic [AW:1] a);
     bhash = a;
     if (BXOR) bhash[AW-CHB:AW-CHB-1] = a[AW-CHB:AW-CHB-1] ^ a[COL_BITS+3:COL_BITS+2];
+    if (BXC && DUAL) bhash[AW] = a[AW] ^ a[COL_BITS+4];   // BXC: chip ^= row[3]
   endfunction
 
   logic [NP-1:0] req_d, ack_d;

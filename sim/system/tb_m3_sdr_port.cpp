@@ -71,6 +71,7 @@ int main(int argc, char **argv) {
   bool lw1 = false, seq = false, nowait = false; int idle_max = 3;   // --seq: half the line reads are of the line after the last (the read-ahead, R107)
   for (int k = 3; k < argc; k++) {
     if (!std::strcmp(argv[k], "--bxor")) sd.bxor = true;   // the build's BXOR (R107)
+    if (!std::strcmp(argv[k], "--bxc")) sd.bxc = true;     // the build's BXC (chip hash)
     if (!std::strcmp(argv[k], "--lw1")) lw1 = true;        // the build's LW1 (R107)
     if (!std::strcmp(argv[k], "--seq")) seq = true;
     if (!std::strcmp(argv[k], "--nowait")) nowait = true;
