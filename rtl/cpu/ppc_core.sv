@@ -165,11 +165,11 @@ module ppc_core
   parameter bit LRA = 1'b1,
   // IUN: the instruction micro-TLB's entries (2, 4 or 8), replaced in turn; the 603e's ITLB has 64 (5.4.3.1),
   // and a hit in either costs no cycle, so more entries change only the timing
-  parameter int IUN = 4,
+  parameter int IUN = 8,
   // DUN: the data micro-TLB's entries (2, 4, 6 or 8); the 603e's DTLB has 64 (5.4.3.1) and a hit costs no
   // cycle, so this changes only the timing (a miss is a replay). DRP: its replacement, 0 in turn (a pointer),
   // 1 least recently used (an empty entry first); both are timing only
-  parameter int DUN = 4,
+  parameter int DUN = 8,
   parameter bit DRP = 1'b1,
   // FAST = 0: no single unit (ppc_fpu_fast SF = 0); every multiply-add op goes to the double unit, frsqrte
   // still to its estimate pipe. Same results, single ops at the double unit's latency (study R129)
