@@ -794,7 +794,10 @@ module m3_system
   logic       snd_we, snd_data;
   logic [7:0] snd_byte;
   generate if (SND_DSP) begin : g_snd
-    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(256), .BLOCK(25'h1E4_0000)) u_snd (
+    // WD_BITS 15 (743 ms, was 12, 93 ms): an ARM that falls more than D + SLIP samples behind and needs over
+    // 93 ms to catch up made the bridge reset itself, and the server's new session reboots the sound board, so
+    // the music the game started never came back. A server restart takes seconds, still well past 743 ms.
+    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(256), .BLOCK(25'h1E4_0000), .WD_BITS(15)) u_snd (
       .clk, .rst(rst_snd), .midi_we(snd_we), .midi_data(snd_data), .midi_byte(snd_byte), .vol(snd_vol),
       .d_req(d_req[7]), .d_we(d_we[7]), .d_addr(d_addr[7]), .d_blen(d_blen[7]), .d_din(d_din[7]), .d_be(d_be[7]),
       .d_wacc(d_wacc[7]), .d_rvalid(d_rvalid[7]), .d_ack(d_ack[7]), .d_dout(dm_dout),
