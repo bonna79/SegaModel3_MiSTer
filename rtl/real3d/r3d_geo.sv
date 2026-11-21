@@ -143,6 +143,9 @@ module r3d_geo
   input  logic        step15,       // Step 1.5 and later: ten-word nodes, 13.11 vertices
   output logic        busy,
   output logic [7:0]  err,          // sticky: [0] walker limit [1] matrix stack [2] clip buffer
+  // diagnostic (our fork): {engine running, main waits on the walker, main waits for a chunk (M_CHW), main reads
+  // a matrix (M_CRW)}, one bit a clock
+  output logic [3:0]  dbg_wait,
 
   output logic        cull_req,
   output logic [23:0] cull_addr,
@@ -796,6 +799,7 @@ module r3d_geo
 
   assign busy = (mst != M_IDLE) || start;
   assign ev_ready = (mst == M_EV);
+  assign dbg_wait = {vk_busy, mst == M_EV && !ev_valid, mst == M_CHW, mst == M_CRW};
 
   // ===========================================================================
   // main

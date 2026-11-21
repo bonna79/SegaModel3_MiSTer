@@ -902,13 +902,54 @@ module m3_system
   logic [31:0] cr_rd, pr_rd, vr_rd;
   logic        gq_valid, gq_ready, gq_last;
   logic [31:0] gq_data;
+  logic [3:0] geo_dbg;
   r3d_geo #(.SETUP_OUT(1'b1), .LOD_WORD(1'b1)) u_geo (
-    .clk, .rst(rst_geo), .start(g_start), .step15, .busy(geo_busy), .err(geo_err),
+    .clk, .rst(rst_geo), .start(g_start), .step15, .busy(geo_busy), .err(geo_err), .dbg_wait(geo_dbg),
     .cull_req(cr_req), .cull_addr(cr_addr), .cull_len(cr_len), .cull_ack(cr_ack), .cull_rvalid(cr_rv), .cull_rdata(cr_rd),
     .pram_req(pr_req), .pram_addr(pr_addr), .pram_len(pr_len), .pram_ack(pr_ack), .pram_rvalid(pr_rv), .pram_rdata(pr_rd),
     .vrom_req(vr_req), .vrom_addr(vr_addr), .vrom_len(vr_len), .vrom_ack(vr_ack), .vrom_rvalid(vr_rv), .vrom_rdata(vr_rd),
     .out_valid(gq_valid), .out_ready(gq_ready), .out_data(gq_data), .out_last(gq_last));
   assign g_busy = geo_busy || gq_valid;
+
+  // diagnostic (our fork): where the geometry's time goes, totals over the last second (overlay rows 3-4).
+  // Units: busy, waits and engine in 4,096 clocks; latency sums in 256 clocks, requests in 16 (ack to first word).
+  logic [31:0] gw_busy, gw_ev, gw_chw, gw_crw, gw_run, gw_cl, gw_cn, gw_pl, gw_pn;
+  logic [15:0] gw_starts;
+  logic [31:0] gq_busy, gq_ev, gq_chw, gq_crw, gq_run, gq_cl, gq_cn, gq_pl, gq_pn;
+  logic [15:0] gq_starts;
+  logic        gw_cw, gw_pw;                 // a culling / polygon RAM request acknowledged, first word not back
+  function automatic logic [15:0] sat16(input logic [31:0] v, input int sh);
+    logic [31:0] x; x = v >> sh;
+    sat16 = (x[31:16] != 16'd0) ? 16'hFFFF : x[15:0];
+  endfunction
+  always_ff @(posedge clk) begin
+    if (rst) begin
+      gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
+      gw_pl <= '0; gw_pn <= '0; gw_starts <= '0; gw_cw <= 1'b0; gw_pw <= 1'b0;
+      gq_busy <= '0; gq_ev <= '0; gq_chw <= '0; gq_crw <= '0; gq_run <= '0; gq_cl <= '0; gq_cn <= '0;
+      gq_pl <= '0; gq_pn <= '0; gq_starts <= '0;
+    end else begin
+      if (cr_ack) gw_cw <= 1'b1; else if (cr_rv) gw_cw <= 1'b0;
+      if (pr_ack) gw_pw <= 1'b1; else if (pr_rv) gw_pw <= 1'b0;
+      if (sec_tick) begin
+        gq_busy <= gw_busy; gq_ev <= gw_ev; gq_chw <= gw_chw; gq_crw <= gw_crw; gq_run <= gw_run;
+        gq_cl <= gw_cl; gq_cn <= gw_cn; gq_pl <= gw_pl; gq_pn <= gw_pn; gq_starts <= gw_starts;
+        gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
+        gw_pl <= '0; gw_pn <= '0; gw_starts <= '0;
+      end else begin
+        gw_busy <= gw_busy + 32'(geo_busy);
+        gw_run  <= gw_run  + 32'(geo_dbg[3]);
+        gw_ev   <= gw_ev   + 32'(geo_dbg[2]);
+        gw_chw  <= gw_chw  + 32'(geo_dbg[1]);
+        gw_crw  <= gw_crw  + 32'(geo_dbg[0]);
+        gw_cl   <= gw_cl   + 32'(gw_cw && !cr_rv);
+        gw_cn   <= gw_cn   + 32'(cr_ack);
+        gw_pl   <= gw_pl   + 32'(gw_pw && !pr_rv);
+        gw_pn   <= gw_pn   + 32'(pr_ack);
+        gw_starts <= gw_starts + 16'(g_start);
+      end
+    end
+  end
 
   // culling RAM: words 0-0xFFFFF are 8C, 0x800000-0x83FFFF 8E (bank R); else zero
   logic [23:0] cb_addr;
@@ -1262,12 +1303,12 @@ module m3_system
         6'd10: ov_v <= {n_unmapped, rast_novf};   // study R136: frames the store overflowed
         6'd11: ov_v <= {n_drop_g, n_drop_e, n_drop_f};   // diagnostic: drops by reason (was last_unmapped)
         // row 3: tile registers 20, 60, 64, 68
-        6'd12: ov_v <= tgr20;
-        6'd13: ov_v <= tgr60;
-        6'd14: ov_v <= tgr64;
-        6'd15: ov_v <= tgr68;
+        6'd12: ov_v <= {sat16(gq_busy, 12), sat16(gq_ev, 12)};    // diagnostic: geometry time, last second
+        6'd13: ov_v <= {sat16(gq_chw, 12), sat16(gq_crw, 12)};
+        6'd14: ov_v <= {sat16(gq_run, 12), gq_starts};
+        6'd15: ov_v <= {sat16(gq_cl, 8), sat16(gq_cn, 4)};
         // row 4: tile register 6C, 08; overruns; the I/O port A
-        6'd16: ov_v <= tgr6c;
+        6'd16: ov_v <= {sat16(gq_pl, 8), sat16(gq_pn, 4)};
         6'd17: ov_v <= tgr08;
         6'd18: ov_v <= {tg_ovr_n, 8'd0, io_pa};
         6'd19: ov_v <= {r3d_cfg0[15:0], r3d_cfg2[15:0]};
