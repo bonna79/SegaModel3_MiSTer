@@ -902,7 +902,7 @@ module m3_system
   logic [31:0] cr_rd, pr_rd, vr_rd;
   logic        gq_valid, gq_ready, gq_last;
   logic [31:0] gq_data;
-  logic [3:0] geo_dbg;
+  logic [7:0] geo_dbg;
   r3d_geo #(.SETUP_OUT(1'b1), .LOD_WORD(1'b1)) u_geo (
     .clk, .rst(rst_geo), .start(g_start), .step15, .busy(geo_busy), .err(geo_err), .dbg_wait(geo_dbg),
     .cull_req(cr_req), .cull_addr(cr_addr), .cull_len(cr_len), .cull_ack(cr_ack), .cull_rvalid(cr_rv), .cull_rdata(cr_rd),
@@ -913,9 +913,9 @@ module m3_system
 
   // diagnostic (our fork): where the geometry's time goes, totals over the last second (overlay rows 3-4).
   // Units: busy, waits and engine in 4,096 clocks; latency sums in 256 clocks, requests in 16 (ack to first word).
-  logic [31:0] gw_busy, gw_ev, gw_chw, gw_crw, gw_run, gw_cl, gw_cn, gw_pl, gw_pn;
+  logic [31:0] gw_busy, gw_ev, gw_chw, gw_crw, gw_run, gw_cl, gw_cn, gw_pl, gw_pn, gw_dec, gw_full, gw_vkp, gw_vkm;
   logic [15:0] gw_starts;
-  logic [31:0] gq_busy, gq_ev, gq_chw, gq_crw, gq_run, gq_cl, gq_cn, gq_pl, gq_pn;
+  logic [31:0] gq_busy, gq_ev, gq_chw, gq_crw, gq_run, gq_cl, gq_cn, gq_pl, gq_pn, gq_dec, gq_full, gq_vkp, gq_vkm;
   logic [15:0] gq_starts;
   logic        gw_cw, gw_pw;                 // a culling / polygon RAM request acknowledged, first word not back
   function automatic logic [15:0] sat16(input logic [31:0] v, input int sh);
@@ -926,6 +926,7 @@ module m3_system
     if (rst) begin
       gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
       gw_pl <= '0; gw_pn <= '0; gw_starts <= '0; gw_cw <= 1'b0; gw_pw <= 1'b0;
+      gw_dec <= '0; gw_full <= '0; gw_vkp <= '0; gw_vkm <= '0; gq_dec <= '0; gq_full <= '0; gq_vkp <= '0; gq_vkm <= '0;
       gq_busy <= '0; gq_ev <= '0; gq_chw <= '0; gq_crw <= '0; gq_run <= '0; gq_cl <= '0; gq_cn <= '0;
       gq_pl <= '0; gq_pn <= '0; gq_starts <= '0;
     end else begin
@@ -934,6 +935,8 @@ module m3_system
       if (sec_tick) begin
         gq_busy <= gw_busy; gq_ev <= gw_ev; gq_chw <= gw_chw; gq_crw <= gw_crw; gq_run <= gw_run;
         gq_cl <= gw_cl; gq_cn <= gw_cn; gq_pl <= gw_pl; gq_pn <= gw_pn; gq_starts <= gw_starts;
+        gq_dec <= gw_dec; gq_full <= gw_full; gq_vkp <= gw_vkp; gq_vkm <= gw_vkm;
+        gw_dec <= '0; gw_full <= '0; gw_vkp <= '0; gw_vkm <= '0;
         gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
         gw_pl <= '0; gw_pn <= '0; gw_starts <= '0;
       end else begin
@@ -947,6 +950,10 @@ module m3_system
         gw_pl   <= gw_pl   + 32'(gw_pw && !pr_rv);
         gw_pn   <= gw_pn   + 32'(pr_ack);
         gw_starts <= gw_starts + 16'(g_start);
+        gw_dec  <= gw_dec  + 32'(geo_dbg[4]);
+        gw_full <= gw_full + 32'(geo_dbg[5]);
+        gw_vkp  <= gw_vkp  + 32'(geo_dbg[6]);
+        gw_vkm  <= gw_vkm  + 32'(geo_dbg[7]);
       end
     end
   end
@@ -1309,9 +1316,9 @@ module m3_system
         6'd15: ov_v <= {sat16(gq_cl, 8), sat16(gq_cn, 4)};
         // row 4: tile register 6C, 08; overruns; the I/O port A
         6'd16: ov_v <= {sat16(gq_pl, 8), sat16(gq_pn, 4)};
-        6'd17: ov_v <= tgr08;
+        6'd17: ov_v <= {sat16(gq_dec, 12), sat16(gq_full, 12)};   // diagnostic: M_CHW as VROM decoder empty / vertex store full
         6'd18: ov_v <= {tg_ovr_n, 8'd0, io_pa};
-        6'd19: ov_v <= {r3d_cfg0[15:0], r3d_cfg2[15:0]};
+        6'd19: ov_v <= {sat16(gq_vkp, 12), sat16(gq_vkm, 12)};   // diagnostic: engine running for the polygon machine / main
         // row 5: SDRAM and loader: bytes loaded; flags; the CPU's longest bus wait
         6'd20: ov_v <= {5'd0, ld_bytes};
         6'd21: ov_v <= {3'd0, mem_ready, 3'd0, rom_loaded, 3'd0, ld_ovf, 3'd0, wd_flag, 16'd0};

@@ -144,8 +144,9 @@ module r3d_geo
   output logic        busy,
   output logic [7:0]  err,          // sticky: [0] walker limit [1] matrix stack [2] clip buffer
   // diagnostic (our fork): {engine running, main waits on the walker, main waits for a chunk (M_CHW), main reads
-  // a matrix (M_CRW)}, one bit a clock
-  output logic [3:0]  dbg_wait,
+  // a matrix (M_CRW)}, one bit a clock; [4] M_CHW with the decoder's queue empty (VROM), [5] M_CHW with the
+  // vertex store full (the polygon machine behind), [6] engine running for the polygon machine, [7] for main
+  output logic [7:0]  dbg_wait,
 
   output logic        cull_req,
   output logic [23:0] cull_addr,
@@ -799,7 +800,9 @@ module r3d_geo
 
   assign busy = (mst != M_IDLE) || start;
   assign ev_ready = (mst == M_EV);
-  assign dbg_wait = {vk_busy, mst == M_EV && !ev_valid, mst == M_CHW, mst == M_CRW};
+  assign dbg_wait = {vk_busy && own_m, vk_busy && own_p,
+                     mst == M_CHW && dq_cnt != 2'd0 && cq_cnt >= 3'd3, mst == M_CHW && dq_cnt == 2'd0,
+                     vk_busy, mst == M_EV && !ev_valid, mst == M_CHW, mst == M_CRW};
 
   // ===========================================================================
   // main
