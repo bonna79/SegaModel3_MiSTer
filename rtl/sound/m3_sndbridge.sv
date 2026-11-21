@@ -169,6 +169,15 @@ module m3_sndbridge #(
   wire         srst   = rst || wd_rst;
   localparam logic [15:0] P0 = 16'(D - 1 - 512);       // p at a core reset; its low 9 bits are D - 1
 
+  // diagnostic (our fork): the watchdog's resets, counted (power-up 0, never reset), in the header's top bits
+  /* verilator lint_off PROCASSINIT */
+  logic [5:0] wd_n = 6'd0;
+  logic       wd_q = 1'b0;
+  /* verilator lint_on PROCASSINIT */
+  always_ff @(posedge clk) begin
+    wd_q <= wd_rst;
+    if (wd_rst && !wd_q) wd_n <= wd_n + 6'd1;
+  end
   // the epoch: moves at every reset, the core's or the bridge's own, and is kept through it (power-up 0)
   /* verilator lint_off PROCASSINIT */
   logic [1:0] epoch = 2'd0;             // a power-up value (Quartus keeps it), never reset
@@ -201,7 +210,8 @@ module m3_sndbridge #(
       // (the clear's word is kind 7, which the engine ignores: the bridge takes a cleared record's
       // beats as commands whenever it looks at a slot not yet written, and kind 0 would write TEMP)
       J_CLR:   d_din = {3'd7, 43'd0, ~epoch, 16'd0};
-      J_HDR:   d_din = {6'd0, m_count, m_fs, 16'(D), 8'h4D, 4'd2, 2'd0, epoch};   // m_fs: fs as the job began
+      // (our fork, diagnostic: the top 6 bits count the bridge's own resets, the watchdog's; the server masks them)
+      J_HDR:   d_din = {wd_n, m_count, m_fs, 16'(D), 8'h4D, 4'd2, 2'd0, epoch};   // m_fs: fs as the job began
       default: d_din = {16'd0, m_fs, 23'd0, m_byte};
     endcase
   end

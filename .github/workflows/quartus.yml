@@ -53,6 +53,15 @@ jobs:
           # worst slack per clock and corner, readable from the job log
           grep -B1 -A2 "^Type" output_files/Model3.sta.summary | grep -E "Type|Slack" | paste - - | grep -E "Setup|Hold|Recovery" || true
 
+      - name: Sound bridge timing
+        if: always()
+        run: |
+          if [ -f ci/snd_timing.tcl ]; then
+            docker run --rm -v "$PWD:/project" -w /project --user "$(id -u):$(id -g)" "$IMAGE" \
+              quartus_sta -t ci/snd_timing.tcl > /dev/null 2>&1 || true
+            for f in snd_setup_to snd_setup_from snd_hold_to snd_recovery_to; do echo "== $f"; cat $f.rpt 2>/dev/null | head -40; done
+          fi
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
