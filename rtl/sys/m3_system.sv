@@ -919,11 +919,16 @@ module m3_system
 
   // diagnostic (our fork): where the geometry's time goes, totals over the last second (overlay rows 3-4).
   // Units: busy, waits and engine in 4,096 clocks; latency sums in 256 clocks, requests in 16 (ack to first word).
-  logic [31:0] gw_busy, gw_ev, gw_chw, gw_crw, gw_run, gw_cl, gw_cn, gw_pl, gw_pn, gw_dec, gw_full, gw_vkp, gw_vkm;
+  logic [31:0] gw_busy, gw_ev, gw_chw, gw_crw, gw_run, gw_cl, gw_cn, gw_pl, gw_pn, gw_dec, gw_full, gw_drn, gw_yng;
   logic [15:0] gw_starts;
-  logic [31:0] gq_busy, gq_ev, gq_chw, gq_crw, gq_run, gq_cl, gq_cn, gq_pl, gq_pn, gq_dec, gq_full, gq_vkp, gq_vkm;
+  logic [31:0] gq_busy, gq_ev, gq_chw, gq_crw, gq_run, gq_cl, gq_cn, gq_pl, gq_pn, gq_dec, gq_full, gq_drn, gq_yng;
   logic [15:0] gq_starts;
   logic        gw_cw, gw_pw;                 // a culling / polygon RAM request acknowledged, first word not back
+  // VROM in DDR3 (m3_xmem's port): beats in flight summed every clock (Little: mean beat latency = sum / beats),
+  // beats, clocks the port waited for DDR3 to take a burst
+  logic [7:0]  gx_bif;
+  logic [39:0] gw_xsum, gq_xsum;
+  logic [31:0] gw_xbeat, gw_xwait, gq_xbeat, gq_xwait;
   function automatic logic [15:0] sat16(input logic [31:0] v, input int sh);
     logic [31:0] x; x = v >> sh;
     sat16 = (x[31:16] != 16'd0) ? 16'hFFFF : x[15:0];
@@ -932,17 +937,20 @@ module m3_system
     if (rst) begin
       gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
       gw_pl <= '0; gw_pn <= '0; gw_starts <= '0; gw_cw <= 1'b0; gw_pw <= 1'b0;
-      gw_dec <= '0; gw_full <= '0; gw_vkp <= '0; gw_vkm <= '0; gq_dec <= '0; gq_full <= '0; gq_vkp <= '0; gq_vkm <= '0;
+      gw_dec <= '0; gw_full <= '0; gw_drn <= '0; gw_yng <= '0; gq_dec <= '0; gq_full <= '0; gq_drn <= '0; gq_yng <= '0;
       gq_busy <= '0; gq_ev <= '0; gq_chw <= '0; gq_crw <= '0; gq_run <= '0; gq_cl <= '0; gq_cn <= '0;
       gq_pl <= '0; gq_pn <= '0; gq_starts <= '0;
+      gx_bif <= '0; gw_xsum <= '0; gq_xsum <= '0; gw_xbeat <= '0; gw_xwait <= '0; gq_xbeat <= '0; gq_xwait <= '0;
     end else begin
+      gx_bif <= gx_bif + (xp_req && xp_ack ? xp_blen : 8'd0) - 8'(xp_rvalid);
       if (cr_ack) gw_cw <= 1'b1; else if (cr_rv) gw_cw <= 1'b0;
       if (pr_ack) gw_pw <= 1'b1; else if (pr_rv) gw_pw <= 1'b0;
       if (sec_tick) begin
         gq_busy <= gw_busy; gq_ev <= gw_ev; gq_chw <= gw_chw; gq_crw <= gw_crw; gq_run <= gw_run;
         gq_cl <= gw_cl; gq_cn <= gw_cn; gq_pl <= gw_pl; gq_pn <= gw_pn; gq_starts <= gw_starts;
-        gq_dec <= gw_dec; gq_full <= gw_full; gq_vkp <= gw_vkp; gq_vkm <= gw_vkm;
-        gw_dec <= '0; gw_full <= '0; gw_vkp <= '0; gw_vkm <= '0;
+        gq_dec <= gw_dec; gq_full <= gw_full; gq_drn <= gw_drn; gq_yng <= gw_yng;
+        gw_dec <= '0; gw_full <= '0; gw_drn <= '0; gw_yng <= '0;
+        gq_xsum <= gw_xsum; gq_xbeat <= gw_xbeat; gq_xwait <= gw_xwait; gw_xsum <= '0; gw_xbeat <= '0; gw_xwait <= '0;
         gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
         gw_pl <= '0; gw_pn <= '0; gw_starts <= '0;
       end else begin
@@ -958,8 +966,11 @@ module m3_system
         gw_starts <= gw_starts + 16'(g_start);
         gw_dec  <= gw_dec  + 32'(geo_dbg[4]);
         gw_full <= gw_full + 32'(geo_dbg[5]);
-        gw_vkp  <= gw_vkp  + 32'(geo_dbg[6]);
-        gw_vkm  <= gw_vkm  + 32'(geo_dbg[7]);
+        gw_drn  <= gw_drn  + 32'(geo_dbg[6]);
+        gw_yng  <= gw_yng  + 32'(geo_dbg[7]);
+        gw_xsum  <= gw_xsum  + 40'(gx_bif);
+        gw_xbeat <= gw_xbeat + 32'(xp_rvalid);
+        gw_xwait <= gw_xwait + 32'(xp_req && !xp_ack);
       end
     end
   end
@@ -1324,11 +1335,11 @@ module m3_system
         6'd16: ov_v <= {sat16(gq_pl, 8), sat16(gq_pn, 4)};
         6'd17: ov_v <= {sat16(gq_dec, 12), sat16(gq_full, 12)};   // diagnostic: M_CHW as VROM decoder empty / vertex store full
         6'd18: ov_v <= {tg_ovr_n, 8'd0, io_pa};
-        6'd19: ov_v <= {sat16(gq_vkp, 12), sat16(gq_vkm, 12)};   // diagnostic: engine running for the polygon machine / main
+        6'd19: ov_v <= {sat16(gq_drn, 12), sat16(gq_yng, 12)};   // diagnostic: VROM wait at a model's start: previous stream draining / first word
         // row 5: SDRAM and loader: bytes loaded; flags; the CPU's longest bus wait
-        6'd20: ov_v <= {5'd0, ld_bytes};
+        6'd20: ov_v <= {(gq_xsum[39:36] != 4'd0) ? 16'hFFFF : gq_xsum[35:20], sat16(gq_xbeat, 10)};   // diagnostic: VROM beats in flight sum / 2^20, beats / 1024 (was ld_bytes)
         6'd21: ov_v <= {3'd0, mem_ready, 3'd0, rom_loaded, 3'd0, ld_ovf, 3'd0, wd_flag, 16'd0};
-        6'd22: ov_v <= cpu_wd_max;
+        6'd22: ov_v <= {sat16(gq_xwait, 12), 16'd0};   // diagnostic: VROM port waiting for DDR3, 4096 clocks (was cpu_wd_max)
         6'd23: ov_v <= {16'd0, cpi_q8};             // CPI x 256, the last second
         // row 6: CPU performance, the last second: cycles, instructions, data memory wait, fetch waiting
         6'd24: ov_v <= perf[0];
