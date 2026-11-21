@@ -926,7 +926,8 @@ module m3_system
   logic        gw_cw, gw_pw;                 // a culling / polygon RAM request acknowledged, first word not back
   // VROM in DDR3 (m3_xmem's port): beats in flight summed every clock (Little: mean beat latency = sum / beats),
   // beats, clocks the port waited for DDR3 to take a burst
-  logic [7:0]  gx_bif;
+  logic [7:0]  gx_bif, gx_bl, gd_q;           // gd_q, gx_*: the inputs a clock late, off the timing paths
+  logic        gx_tk, gx_rv, gx_wt;
   logic [39:0] gw_xsum, gq_xsum;
   logic [31:0] gw_xbeat, gw_xwait, gq_xbeat, gq_xwait;
   function automatic logic [15:0] sat16(input logic [31:0] v, input int sh);
@@ -942,7 +943,8 @@ module m3_system
       gq_pl <= '0; gq_pn <= '0; gq_starts <= '0;
       gx_bif <= '0; gw_xsum <= '0; gq_xsum <= '0; gw_xbeat <= '0; gw_xwait <= '0; gq_xbeat <= '0; gq_xwait <= '0;
     end else begin
-      gx_bif <= gx_bif + (xp_req && xp_ack ? xp_blen : 8'd0) - 8'(xp_rvalid);
+      gd_q <= geo_dbg; gx_tk <= xp_req && xp_ack; gx_bl <= xp_blen; gx_rv <= xp_rvalid; gx_wt <= xp_req && !xp_ack;
+      gx_bif <= gx_bif + (gx_tk ? gx_bl : 8'd0) - 8'(gx_rv);
       if (cr_ack) gw_cw <= 1'b1; else if (cr_rv) gw_cw <= 1'b0;
       if (pr_ack) gw_pw <= 1'b1; else if (pr_rv) gw_pw <= 1'b0;
       if (sec_tick) begin
@@ -955,22 +957,22 @@ module m3_system
         gw_pl <= '0; gw_pn <= '0; gw_starts <= '0;
       end else begin
         gw_busy <= gw_busy + 32'(geo_busy);
-        gw_run  <= gw_run  + 32'(geo_dbg[3]);
-        gw_ev   <= gw_ev   + 32'(geo_dbg[2]);
-        gw_chw  <= gw_chw  + 32'(geo_dbg[1]);
-        gw_crw  <= gw_crw  + 32'(geo_dbg[0]);
+        gw_run  <= gw_run  + 32'(gd_q[3]);
+        gw_ev   <= gw_ev   + 32'(gd_q[2]);
+        gw_chw  <= gw_chw  + 32'(gd_q[1]);
+        gw_crw  <= gw_crw  + 32'(gd_q[0]);
         gw_cl   <= gw_cl   + 32'(gw_cw && !cr_rv);
         gw_cn   <= gw_cn   + 32'(cr_ack);
         gw_pl   <= gw_pl   + 32'(gw_pw && !pr_rv);
         gw_pn   <= gw_pn   + 32'(pr_ack);
         gw_starts <= gw_starts + 16'(g_start);
-        gw_dec  <= gw_dec  + 32'(geo_dbg[4]);
-        gw_full <= gw_full + 32'(geo_dbg[5]);
-        gw_drn  <= gw_drn  + 32'(geo_dbg[6]);
-        gw_yng  <= gw_yng  + 32'(geo_dbg[7]);
+        gw_dec  <= gw_dec  + 32'(gd_q[4]);
+        gw_full <= gw_full + 32'(gd_q[5]);
+        gw_drn  <= gw_drn  + 32'(gd_q[6]);
+        gw_yng  <= gw_yng  + 32'(gd_q[7]);
         gw_xsum  <= gw_xsum  + 40'(gx_bif);
-        gw_xbeat <= gw_xbeat + 32'(xp_rvalid);
-        gw_xwait <= gw_xwait + 32'(xp_req && !xp_ack);
+        gw_xbeat <= gw_xbeat + 32'(gx_rv);
+        gw_xwait <= gw_xwait + 32'(gx_wt);
       end
     end
   end
