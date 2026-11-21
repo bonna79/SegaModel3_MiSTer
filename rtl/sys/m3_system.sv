@@ -131,6 +131,10 @@ module m3_system
   //   m3_xmem's reads both follow it. 0: the MRA layout, a beat a read, as before
   parameter bit          VROM_LIN = 1'b1,
   parameter int          DDR_MAXQ = 8,               // m3_ddr3p: DDR3 reads queued or in flight at most (1-32; R101)
+  // our fork: a deeper VROM prefetch for the geometry (the board's decoder waited on VROM ~21% of its time)
+  parameter int          MS_FD    = 64,              // r3d_mstream FIFO depth, words (32 as before)
+  parameter int          MS_NB    = 8,               // r3d_mstream 8-word bursts in flight (4 as before)
+  parameter int          XMEM_GQ  = 8,               // m3_xmem geometry requests in flight (4 as before)
   parameter bit          SND_DSP  = 1'b1,            // the sound link (D-53): the SCSP DSPs and the HPS bridge on DDR3 port 7; 0 silence
   // ---- SDRAM scheduling for the CPU (study R107; all 0: m2_sdram as it was)
   //   SDR_PRI      ports granted ahead of the round-robin (m2_sdram PRI; bit 0 the bus, i.e. the CPU)
@@ -903,7 +907,7 @@ module m3_system
   logic        gq_valid, gq_ready, gq_last;
   logic [31:0] gq_data;
   logic [7:0] geo_dbg;
-  r3d_geo #(.SETUP_OUT(1'b1), .LOD_WORD(1'b1)) u_geo (
+  r3d_geo #(.SETUP_OUT(1'b1), .LOD_WORD(1'b1), .MS_FD(MS_FD), .MS_NB(MS_NB)) u_geo (
     .clk, .rst(rst_geo), .start(g_start), .step15, .busy(geo_busy), .err(geo_err), .dbg_wait(geo_dbg),
     .cull_req(cr_req), .cull_addr(cr_addr), .cull_len(cr_len), .cull_ack(cr_ack), .cull_rvalid(cr_rv), .cull_rdata(cr_rd),
     .pram_req(pr_req), .pram_addr(pr_addr), .pram_len(pr_len), .pram_ack(pr_ack), .pram_rvalid(pr_rv), .pram_rdata(pr_rd),
@@ -996,7 +1000,7 @@ module m3_system
   assign vr_rd  = vrom_x ? xg_rd  : vs_rd;
   generate if (XMEM == 1) begin : g_xmem
     logic [23:0] xb_addr;
-    m3_xmem #(.AW(AW), .SDR_VROM(SDR_VROM), .XLIN(VROM_LIN)) u_xmem (
+    m3_xmem #(.AW(AW), .SDR_VROM(SDR_VROM), .XLIN(VROM_LIN), .GQ(XMEM_GQ)) u_xmem (
       .clk, .rst, .vrom64,
       .g_req(vr_req && vrom_x), .g_addr(vr_addr), .g_len(vr_len), .g_ack(xg_ack), .g_rvalid(xg_rv), .g_rdata(xg_rd),
       .t_req(tu_sreq && vrom_x), .t_addr(tu_saddr), .t_ack(xt_ack), .t_dout(xt_dout),

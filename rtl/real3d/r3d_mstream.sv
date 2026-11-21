@@ -26,7 +26,12 @@
 // The colour table (polygon RAM 0x400 + index) shares the polygon RAM port:
 // a colour read waits until no stream burst is in flight there.
 
-module r3d_mstream (
+module r3d_mstream #(
+  // our fork: FIFO depth (words) and bursts in flight; 32 and 4 as before. A deeper prefetch covers the
+  // board's VROM latency (DDR3 through m3_xmem), which leaves the decoder waiting ~21% of the geometry's time
+  parameter int FD = 32,
+  parameter int NB = 4
+) (
   input  logic        clk,
   input  logic        rst,
 
@@ -58,7 +63,7 @@ module r3d_mstream (
   input  logic        vrom_rvalid,
   input  logic [31:0] vrom_rdata
 );
-  localparam int FD = 32;               // one MLAB deep: three bursts in flight cover 12-20 cycles
+  localparam int PW = $clog2(FD), BW = $clog2(NB);
 
   logic        active, draining, in_vrom;
   logic [24:0] next;             // next word to request (index in the region)
@@ -68,13 +73,13 @@ module r3d_mstream (
   logic        past_end, near_end;
   assign past_end = in_vrom ? next[24] : (next[24:20] != 5'd0);
   assign near_end = in_vrom ? &next[23:3] : &next[19:3];
-  logic [2:0]  outst;            // bursts in flight
+  logic [3:0]  outst;            // bursts in flight
   logic [6:0]  count;            // FIFO occupancy
-  logic [4:0]  wp, rp;
+  logic [PW-1:0] wp, rp;
   (* ramstyle = "MLAB, no_rw_check" *) logic [31:0] fifo [0:FD-1];
   // valid words of each burst in flight (8, or fewer at the region end)
-  logic [3:0]  bvalid [0:3];
-  logic [1:0]  bw, br;
+  logic [3:0]  bvalid [0:NB-1];
+  logic [BW-1:0] bw, br;
   logic [2:0]  beat;
   logic        creq_pending, c_issued;
 
@@ -83,7 +88,7 @@ module r3d_mstream (
   assign rv = in_vrom ? vrom_rvalid : pram_rvalid;
   assign rd = in_vrom ? vrom_rdata : pram_rdata;
 
-  assign ready_start = !active && !draining && outst == 3'd0 && !pram_req && !vrom_req;
+  assign ready_start = !active && !draining && outst == 4'd0 && !pram_req && !vrom_req;
   // w_valid as a register beside count (c7_s1: the geometry's header decode through the stall into pop and rp,
   // -0.55 / -1.41 ns): formed from the next active and the next count's zero test, the count's own compares
   // side by side with push and pop
@@ -96,7 +101,7 @@ module r3d_mstream (
 
   // space for one more burst beyond those in flight
   logic room;
-  assign room = ({1'b0, count} + {1'b0, outst, 3'b000} + 8'd8) <= 8'(FD);
+  assign room = ({2'b0, count} + {2'b0, outst, 3'b000} + 9'd8) <= 9'(FD);
 
   always_ff @(posedge clk) begin
     c_valid <= 1'b0;
@@ -128,7 +133,7 @@ module r3d_mstream (
       end
 
       // ---- issue a burst, or synthesise zeros past the region end
-      if (active && !stop && !pram_req && !vrom_req && room && outst != 3'd4 && !(creq_pending && !in_vrom)) begin
+      if (active && !stop && !pram_req && !vrom_req && room && outst != 4'(NB) && !(creq_pending && !in_vrom)) begin
         if (past_end) begin
           // zeros: one word a cycle straight into the FIFO
           if (count != 7'(FD)) begin push = 1'b1; pd = 32'd0; end
@@ -140,23 +145,23 @@ module r3d_mstream (
       end
       if (pram_req && pram_ack) begin
         pram_req <= 1'b0;
-        if (c_issued) ; else begin bw <= bw + 2'd1; outst <= outst + 3'd1; next <= next + 25'd8; end
+        if (c_issued) ; else begin bw <= bw + BW'(1); outst <= outst + 4'd1; next <= next + 25'd8; end
       end
       if (vrom_req && vrom_ack) begin
         vrom_req <= 1'b0;
-        bw <= bw + 2'd1; outst <= outst + 3'd1; next <= next + 25'd8;
+        bw <= bw + BW'(1); outst <= outst + 4'd1; next <= next + 25'd8;
       end
 
       // ---- colour read: polygon RAM, when no stream burst is in flight there
-      if (creq_pending && !c_issued && !pram_req && (in_vrom || outst == 3'd0 || !active)) begin
+      if (creq_pending && !c_issued && !pram_req && (in_vrom || outst == 4'd0 || !active)) begin
         pram_req <= 1'b1; pram_addr <= {4'd0, c_addr}; pram_len <= 3'd0; c_issued <= 1'b1;
       end
-      if (c_issued && !pram_req && pram_rvalid && (in_vrom || outst == 3'd0 || !active)) begin
+      if (c_issued && !pram_req && pram_rvalid && (in_vrom || outst == 4'd0 || !active)) begin
         c_valid <= 1'b1; c_data <= pram_rdata; c_issued <= 1'b0; creq_pending <= 1'b0;
       end
 
       // ---- returning beats of stream bursts
-      if (rv && outst != 3'd0 && !(c_issued && !in_vrom)) begin
+      if (rv && outst != 4'd0 && !(c_issued && !in_vrom)) begin
         if (!draining && active && {1'b0, beat} < bvalid[br]) begin
           push = 1'b1; pd = rd;
         end else if (!draining && active) begin
@@ -164,16 +169,16 @@ module r3d_mstream (
         end
         beat <= beat + 3'd1;
         if (beat == 3'd7) begin
-          br <= br + 2'd1;
-          outst <= outst - 3'd1 + ((pram_req && pram_ack && !c_issued) || (vrom_req && vrom_ack) ? 3'd1 : 3'd0);
-          if (draining && outst == 3'd1) draining <= 1'b0;
+          br <= br + BW'(1);
+          outst <= outst - 4'd1 + ((pram_req && pram_ack && !c_issued) || (vrom_req && vrom_ack) ? 4'd1 : 4'd0);
+          if (draining && outst == 4'd1) draining <= 1'b0;
         end
       end
 
-      if (push) begin fifo[wp] <= pd; wp <= wp + 5'd1; end
-      if (pop) rp <= rp + 5'd1;
+      if (push) begin fifo[wp] <= pd; wp <= wp + PW'(1); end
+      if (pop) rp <= rp + PW'(1);
       if (!(start && ready_start)) count <= count + {6'd0, push} - {6'd0, pop};
-      if (draining && outst == 3'd0) draining <= 1'b0;
+      if (draining && outst == 4'd0) draining <= 1'b0;
       // the next w_valid: the next active, and the next count non-zero (count + push - pop, count < FD)
       act_n = (start && ready_start) || (active && !(stop && active));
       if (start && ready_start) nz_n = 1'b0;

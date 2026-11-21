@@ -70,6 +70,9 @@
 module r3d_geo
   import r3d_ucode_pkg::*;
 #(
+  // our fork: the model stream's FIFO depth and bursts in flight (r3d_mstream)
+  parameter int MS_FD      = 32,
+  parameter int MS_NB      = 4,
   parameter bit FRUSTUM_SM = 1'b1,
   parameter bit SETUP_CR   = 1'b1,
   parameter bit CULL       = 1'b1,
@@ -670,7 +673,7 @@ module r3d_geo
   logic [23:0] ms_addr;
   logic [31:0] ms_w, ms_cd;
   logic [19:0] ms_caddr;
-  r3d_mstream u_ms (
+  r3d_mstream #(.FD(MS_FD), .NB(MS_NB)) u_ms (
     .clk, .rst, .start(ms_start), .addr(ms_addr), .stop(ms_stop), .ready_start(ms_ready),
     .w_valid(ms_wv), .w_data(ms_w), .w_pop(ms_pop),
     .c_req(ms_creq), .c_addr(ms_caddr), .c_valid(ms_cv), .c_data(ms_cd),

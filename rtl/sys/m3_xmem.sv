@@ -46,7 +46,7 @@ module m3_xmem #(
   parameter int          AW       = 26,
   parameter logic [26:0] SDR_VROM = 27'h400_0000,  // where r3d_texup believes VROM is
   parameter bit          PIPE     = 1'b1,          // R127: geometry requests in flight together
-  parameter int          GQ       = 4,             // PIPE: geometry requests taken and not yet given, at most (2 or 4)
+  parameter int          GQ       = 4,             // PIPE: geometry requests taken and not yet given, at most (2, 4 or 8)
   parameter bit          XLIN     = 1'b1           // R127: VROM in the extra memory in pair order (m3_system VROM_LIN)
 ) (
   input  logic          clk,
