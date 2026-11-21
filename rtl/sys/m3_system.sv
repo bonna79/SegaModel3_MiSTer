@@ -797,7 +797,10 @@ module m3_system
     // WD_BITS 15 (743 ms, was 12, 93 ms): an ARM that falls more than D + SLIP samples behind and needs over
     // 93 ms to catch up made the bridge reset itself, and the server's new session reboots the sound board, so
     // the music the game started never came back. A server restart takes seconds, still well past 743 ms.
-    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(256), .BLOCK(25'h1E4_0000), .WD_BITS(15)) u_snd (
+    // D 384 (was 256, 5.8 ms; now 8.7 ms): the server on the ARM runs at 85-96% in a race and falls up to ~670
+    // samples behind; each sample it is behind past D is a record the bridge skips (a small audible gap). 384 is
+    // the most the 512-slot record ring takes with SLIP's 128 samples of the bridge running late on top.
+    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(384), .BLOCK(25'h1E4_0000), .WD_BITS(15)) u_snd (
       .clk, .rst(rst_snd), .midi_we(snd_we), .midi_data(snd_data), .midi_byte(snd_byte), .vol(snd_vol),
       .d_req(d_req[7]), .d_we(d_we[7]), .d_addr(d_addr[7]), .d_blen(d_blen[7]), .d_din(d_din[7]), .d_be(d_be[7]),
       .d_wacc(d_wacc[7]), .d_rvalid(d_rvalid[7]), .d_ack(d_ack[7]), .d_dout(dm_dout),
