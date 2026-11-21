@@ -130,7 +130,7 @@ module m3_system
   //   block-major b * BLK + g), so a geometry request's pairs are one DDR3 burst; the loader's writes and
   //   m3_xmem's reads both follow it. 0: the MRA layout, a beat a read, as before
   parameter bit          VROM_LIN = 1'b1,
-  parameter int          DDR_MAXQ = 8,               // m3_ddr3p: DDR3 reads queued or in flight at most (1-32; R101)
+  parameter int          DDR_MAXQ = 12,              // m3_ddr3p: DDR3 reads queued or in flight at most (1-32; R101)
   // our fork: a deeper VROM prefetch for the geometry (the board's decoder waited on VROM ~21% of its time)
   parameter int          MS_FD    = 64,              // r3d_mstream FIFO depth, words (32 as before)
   parameter int          MS_NB    = 8,               // r3d_mstream 8-word bursts in flight (4 as before)
