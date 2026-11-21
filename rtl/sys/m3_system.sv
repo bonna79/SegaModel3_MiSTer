@@ -826,6 +826,8 @@ module m3_system
   logic        f_end /* verilator public_flat_rd */, r_done /* verilator public_flat_rd */;
   logic [1:0]  f_buf /* verilator public_flat_rd */, show_buf;
   logic [15:0] n_draw, n_drop, n_runs, n_copy, n_tex_up, n_tex_skip;
+  logic [15:0] n_drop_g;
+  logic [7:0]  n_drop_e, n_drop_f;   // diagnostic: why frames are dropped (overlay row 2, word 3)
   r3d_cmd u_r3cmd (
     .clk, .rst, .h_go, .h_rdy, .h_we, .h_addr, .h_wdata, .h_rv, .h_rdata,
     .tg_reg_we, .tg_reg_addr, .tg_reg_wdata, .ln_start, .ln, .mw_we, .mw_dev, .mw_val,
@@ -834,7 +836,7 @@ module m3_system
     .t_valid(t3_valid), .t_ready(t3_ready), .t_vrom(t3_vrom), .t_data(t3_data), .t_flush(t3_flush), .t_pend(t3_pend),
     .t_mark(t3_mark), .t_mpend(t3_mpend), .t_go(t3_go), .t_busy(t3_busy),
     .g_start, .g_busy, .f_ready, .f_begin, .f_end, .f_buf, .r_done, .r_busy,
-    .show_buf, .show_3d, .pingpong(r3_pingpong), .flip(r3_flip), .n_draw, .n_drop);
+    .show_buf, .show_3d, .pingpong(r3_pingpong), .flip(r3_flip), .n_draw, .n_drop, .n_drop_g, .n_drop_e, .n_drop_f);
 
   // ---- culling and polygon RAM windows
   r3d_mem #(.AW(AW), .SDR_8C(SDR_8C), .SDR_8E0(SDR_8E0), .SDR_8E1(SDR_8E1), .DDR_P0(D_POLY0), .DDR_P1(D_POLY1)) u_r3mem (
@@ -1258,7 +1260,7 @@ module m3_system
         6'd8:  ov_v <= {8'h94, n_tex};
         6'd9:  ov_v <= {8'h90, n_vrom};
         6'd10: ov_v <= {n_unmapped, rast_novf};   // study R136: frames the store overflowed
-        6'd11: ov_v <= last_unmapped;
+        6'd11: ov_v <= {n_drop_g, n_drop_e, n_drop_f};   // diagnostic: drops by reason (was last_unmapped)
         // row 3: tile registers 20, 60, 64, 68
         6'd12: ov_v <= tgr20;
         6'd13: ov_v <= tgr60;
