@@ -635,6 +635,23 @@ module m3_system
   end
 `endif
 
+  // diagnostic (our fork): the CPU's MMU events a second, overlay row 11 (DTLB miss, ITLB miss, data micro-TLB
+  // replay, fetch translation slow cycle); inputs a clock late, latched on sec_tick
+  logic [5:0]  mm_q;
+  logic [31:0] mw_dtlb, mw_itlb, mw_utlb, mw_ftr, mq_dtlb, mq_itlb, mq_utlb, mq_ftr;
+  always_ff @(posedge clk) begin
+    mm_q <= cpu_ev_mmu;
+    if (rst) begin
+      mw_dtlb <= '0; mw_itlb <= '0; mw_utlb <= '0; mw_ftr <= '0; mq_dtlb <= '0; mq_itlb <= '0; mq_utlb <= '0; mq_ftr <= '0;
+    end else if (sec_tick) begin
+      mq_dtlb <= mw_dtlb; mq_itlb <= mw_itlb; mq_utlb <= mw_utlb; mq_ftr <= mw_ftr;
+      mw_dtlb <= '0; mw_itlb <= '0; mw_utlb <= '0; mw_ftr <= '0;
+    end else begin
+      mw_dtlb <= mw_dtlb + 32'(mm_q[0]); mw_itlb <= mw_itlb + 32'(mm_q[1]);
+      mw_utlb <= mw_utlb + 32'(mm_q[4]); mw_ftr <= mw_ftr + 32'(mm_q[5]);
+    end
+  end
+
   logic       tg_nw;                      // a write into the name table (the bus's tr_nw; R103, R179)
   m3_bus #(.AW(AW), .SDR_CROM(SDR_CROM), .SDR_FIXED(SDR_FIXED), .SDR_BACKUP(SDR_BACKUP), .SDR_RAM(SDR_RAM),
            .SDR_VRAM(SDR_VRAM), .CROM_BANKS(CROM_BANKS), .MIDI_GAP(MIDI_GAP_C), .FAST(BUS_FAST), .R3P(BUS_R3P), .TGT(TG_TIMING), .TG_MHZ(CLK_MHZ),
@@ -1307,15 +1324,15 @@ module m3_system
         6'd39: ov_v <= XC_ON ? fx_srr0 : 32'd0;
         // row 10: the entry before the most recent one (frozen at the fatal
         // handler: the last entry before the fatal one): vector, SRR0, SRR1, instruction
-        6'd40: ov_v <= XC_ON ? lp_vec : 32'd0;
-        6'd41: ov_v <= XC_ON ? lp_srr0 : 32'd0;
-        6'd42: ov_v <= XC_ON ? lp_srr1 : 32'd0;
-        6'd43: ov_v <= XC_ON ? lp_ins : 32'd0;
+        6'd40: ov_v <= perf[7];   // diagnostic (was lp_vec): CPU redirects a second
+        6'd41: ov_v <= perf[4];   // load-use bubbles
+        6'd42: ov_v <= perf[5];   // mul/div wait
+        6'd43: ov_v <= perf[3];   // decode starved
         // row 11: entries counted; the last DAR and DSISR read by mfspr; the most recent entry's vector
-        6'd44: ov_v <= XC_ON ? xn_cnt : 32'd0;
-        6'd45: ov_v <= XC_ON ? x_dar : 32'd0;
-        6'd46: ov_v <= XC_ON ? x_dsisr : 32'd0;
-        6'd47: ov_v <= XC_ON ? lc_vec : 32'd0;
+        6'd44: ov_v <= mq_dtlb;   // diagnostic (row 11 was the exception capture): DTLB misses a second
+        6'd45: ov_v <= mq_itlb;   // ITLB misses
+        6'd46: ov_v <= mq_utlb;   // data micro-TLB replays
+        6'd47: ov_v <= mq_ftr;    // fetch translation slow cycles
         default: ov_v <= 32'h3B00_0001;   // stage B, build 1
       endcase
     end
