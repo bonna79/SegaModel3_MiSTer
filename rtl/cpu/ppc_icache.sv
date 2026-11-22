@@ -83,6 +83,17 @@
 // invalidates all four ways of the set its EA indexes (3.7.8); HID0[ICFI]
 // and reset sweep every set, 128 cycles. As in ppc_dcache, a line is invalid
 // when its tag is RSV_TAG, and fetches from that page are single reads.
+//
+// Next-line prefetch (IPF = 1; Supermodel study 2026-11-22: Daytona 2's race -77% demand misses with
+// tagged prefetch, Sega Rally 2 -84%). The lookahead (kl + 1's tags, read while kl streams) already
+// knows when the next line of the page misses; then, with the fill port free, that line is filled in the
+// background into the set's victim, exactly as a demand fill of word 0 (tag pair written two cycles
+// after the start, words marked available as they land), without touching the set's PLRU state. The
+// lookahead's miss is registered (pfm_*: the line, set, victim and the set's four tags) and the fill
+// starts in the next cycle, so no compare is in front of the fill's registers; it starts only while no
+// request is pending or starting (a fast-path request, a hit in kl, may run beside it), no tag write is
+// pending (icbi, sweep) and ICE = 1, ILOCK = 0, ICFI = 0. A demand miss arriving during a prefetch waits
+// for it, as for any fill.
 
 module ppc_icache
   import ppc_cache_pkg::*;
@@ -91,7 +102,8 @@ module ppc_icache
   parameter bit          WAYPRED = 1'b1,
   parameter bit          PRE     = 1'b1,               // the pre-read port (above)
   parameter bit          FETCH2  = 1'b0,               // two-word answers (above; off by default, D-36)
-  parameter bit          ISB     = 1'b0                // 32 KiB, 256 sets, EA[19] in the index (above)
+  parameter bit          ISB     = 1'b0,               // 32 KiB, 256 sets, EA[19] in the index (above)
+  parameter bit          IPF     = 1'b0                // next-line prefetch (below)
 )(
   input  logic        clk,
   input  logic        rst,
@@ -135,7 +147,8 @@ module ppc_icache
   output logic        t_alloc,
   output logic [6+ISB:0] t_alloc_set,
   output logic [1:0]  t_alloc_way,
-  output logic [19:0] t_alloc_tag
+  output logic [19:0] t_alloc_tag,
+  output logic        t_alloc_pf    // with t_alloc: a prefetch's allocation (IPF)
 );
 
   localparam int SB = ISB ? 1 : 0;             // the extra set bit
@@ -262,6 +275,9 @@ module ppc_icache
   typedef enum logic [1:0] { MP_IDLE, MP_RQ, MP_FILL, MP_SRD } mp_t;
   mp_t         mp;
   wire         mp_idle = (mp == MP_IDLE);
+  // IPF: the running fill is a prefetch. A prefetch only writes its own set (f_set), so the BTB pre-read and a
+  // line crossing, which wait out a demand fill, run beside it when their set is another (fx_*: register compares)
+  logic        pf_fill;
 
   // ================================================================ compare
   // a check's or a fill's state update is registered (stp_*) and written in
@@ -333,6 +349,19 @@ module ppc_icache
   wire         pair     = FETCH2 && fast && i_w2;               // two words answered
   assign i_two = FETCH2 && f2_q;
   wire         fill_ok  = !f_act && mp_idle && !wk_act && !wk_req;
+  wire         fx_nl    = !f_act || (IPF && pf_fill && six(kl_e, kl[11:5] + 7'd1) != f_set);      // kl + 1's set is not the fill's
+
+  // ---- next-line prefetch (IPF): the lookahead's miss, registered, then the start
+  logic         pfm_v;                          // the last cycle's lookahead missed kl + 1
+  logic [31:5]  pfm_line;
+  logic [IW-1:0] pfm_set;
+  logic         pfm_e;
+  logic [1:0]   pfm_vic;
+  logic [3:0][19:0] pfm_t;                      // the set's tags then (the fill's partner tag)
+  logic         pff_q;                          // the fill started at the last edge is a prefetch
+  wire  [1:0]   f_pw = f_way ^ 2'd1;            // the fill way's partner in its tag pair
+  wire          pf_go = IPF && pfm_v && fill_ok && !pend && !(i_req && !fast) && hid_ice && !hid_ilock && !hid_icfi &&
+                        !icbi_req && !ib2_q && tw_en_q == 2'd0;
 
   // the pre-read: taken at B's edge, used by T's request in the next cycle.
   // Only the fast path can answer in a pre_q cycle (fs_q is cleared at the
@@ -340,9 +369,11 @@ module ppc_icache
   logic        pre_q;
   logic [1:0]  pw_q;
   logic [19:0] ppa_q;
-  wire         pre_take = PRE && i_pv && fast && !wk_act && !f_act && hid_ice;
+  wire         fx_pidx  = !f_act || (IPF && pf_fill && six(i_pidx[12], i_pidx[11:5]) != f_set);  // T's set is not the fill's
+  wire         fx_ta    = !f_act || (IPF && pf_fill && ta_idx != f_set);                         // the set out is not
+  wire         pre_take = PRE && i_pv && fast && !wk_act && fx_pidx && hid_ice;
   // (pre_q: the last edge read the tags at T's set, so they are valid and not a lookahead; asserted below)
-  wire         pfast    = PRE && i_req && i_pre && pre_q && !pend && !t_haz && !wk_act && !f_act;
+  wire         pfast    = PRE && i_req && i_pre && pre_q && !pend && !t_haz && !wk_act && fx_ta;
   // each way's tag against the page, the stored way choosing last: the way
   // mux was in front of the compare, from the tag M10K into pend and nx (a
   // D-36 cached full build)
@@ -431,8 +462,8 @@ module ppc_icache
   // (rd_x: the read address of a request, i_req and !pend taken as given, so the core's i_req is the last select
   // and not inside fast's net (fo 69), which came after the core's fetch issue in tz3_b8_s3's C2 path; tclose3)
   (* keep = 1 *) wire sq_a  = i_seq && fs_q;                                         // fast, given i_req && !pend
-  (* keep = 1 *) wire prt_a = PRE && i_pv && sq_a && !wk_act && !f_act && hid_ice;  // pre_take, given the same
-  (* keep = 1 *) wire pfs_a = PRE && i_pre && pre_q && !t_haz && !wk_act && !f_act; // pfast, given the same
+  (* keep = 1 *) wire prt_a = PRE && i_pv && sq_a && !wk_act && fx_pidx && hid_ice;  // pre_take, given the same
+  (* keep = 1 *) wire pfs_a = PRE && i_pre && pre_q && !t_haz && !wk_act && fx_ta;   // pfast, given the same
   logic [DW-1:0] rd_x;
   logic          da_av_x;
   wire [DW-1:0] da1   = dix(da[DW-1], da[9:0] + 10'd1);
@@ -553,9 +584,16 @@ module ppc_icache
     pre_q   <= pre_take && !rst;
     pw_q    <= i_pway;
     ppa_q   <= i_ppa;
-    fw_pend <= start_fill && !rst;
+    fw_pend <= (start_fill || pf_go) && !rst;
+    pff_q   <= pf_go;
+    if (pf_go) pf_fill <= 1'b1; else if (start_fill) pf_fill <= 1'b0;
+    t_alloc_pf <= pf_go;
+    pfm_v   <= IPF && look && !any && !(i_req && !fast) && hid_ice && !hid_ilock && !rst;
+    if (look && !any) begin
+      pfm_line <= {kl[31:12], kl[11:5] + 7'd1}; pfm_set <= ta_idx; pfm_e <= ISB && kl_e; pfm_vic <= vic; pfm_t <= tg;
+    end
     fw2     <= fw_pend && !rst;
-    fw_otag <= tg[f_way ^ 2'd1];                // pa's set is still on the tag output
+    fw_otag <= pff_q ? pfm_t[f_pw] : tg[f_pw];   // pa's set is still on the tag output (a prefetch: pfm_t)
     if (fw2) begin
       tw_en_q  <= f_way[1] ? 2'b10 : 2'b01;
       tw_set_q <= f_set;
@@ -567,7 +605,7 @@ module ppc_icache
     pfw_q    <= start_fill || (f_act && f_line == pa[31:5] && f_e == pa_e && !avail_nx[pa[4:2]]);
 
     if (rst) begin
-      pend <= 1'b0; fs_q <= 1'b0; f2_q <= 1'b0; kl_v <= 1'b0; nl_v <= 1'b0; kt_v <= 1'b0; f_act <= 1'b0; mp <= MP_IDLE; m_req <= 1'b0;
+      pend <= 1'b0; fs_q <= 1'b0; f2_q <= 1'b0; kl_v <= 1'b0; pfm_v <= 1'b0; pf_fill <= 1'b0; nl_v <= 1'b0; kt_v <= 1'b0; f_act <= 1'b0; mp <= MP_IDLE; m_req <= 1'b0;
       ib2_q <= 1'b0; kl_e <= 1'b0; nx_e <= 1'b0;
       wk_act <= 1'b1; wk_cnt <= 8'd0; wk_req <= 1'b0; tw_last <= 1'b0; ta_v <= 1'b0;
     end else begin
@@ -586,8 +624,8 @@ module ppc_icache
           nx      <= nxn;
           if (kt_v) kt_v <= 1'b0;                      // this word is kl's first since the crossing
           if (xing) begin                               // crossing into kl + 1
-            fs_q <= nl_v && !f_act && hid_ice;
-            f2_q <= nl_v && !f_act && hid_ice;          // its words 0 and 1
+            fs_q <= nl_v && fx_nl && hid_ice;
+            f2_q <= nl_v && fx_nl && hid_ice;           // its words 0 and 1
             if (nl_v) begin
               kl <= kl + 27'd1; kl_way <= nl_way;
               kt_v <= 1'b1; kt_set <= six(kl_e, kl[11:5] + 7'd1); kt_st <= touch(nl_st, nl_way);
@@ -658,14 +696,21 @@ module ppc_icache
 
       // ---- the fill
       // (its fields load while it is idle; only f_act waits on the compare)
+      // (a demand fill starts only while pending, a prefetch only while not: pend, a register, selects)
       if (!f_act) begin
-        f_line <= pa[31:5]; f_set <= six(pa_e, pa[11:5]); f_e <= ISB && pa_e; f_crit <= pa[4:2];
-        t_alloc_set <= six(pa_e, pa[11:5]); t_alloc_tag <= pa[31:12];
-        f_way <= vic; f_cnt <= 3'd0;
+        if (IPF && !pend) begin
+          f_line <= pfm_line; f_set <= pfm_set; f_e <= pfm_e; f_crit <= 3'd0;
+          t_alloc_set <= pfm_set; t_alloc_tag <= pfm_line[31:12];
+          f_way <= pfm_vic; t_alloc_way <= pfm_vic;
+        end else begin
+          f_line <= pa[31:5]; f_set <= six(pa_e, pa[11:5]); f_e <= ISB && pa_e; f_crit <= pa[4:2];
+          t_alloc_set <= six(pa_e, pa[11:5]); t_alloc_tag <= pa[31:12];
+          f_way <= vic; t_alloc_way <= vic;
+        end
+        f_cnt <= 3'd0;
         avail  <= 8'd0;
-        t_alloc_way <= vic;
       end
-      if (start_fill) begin
+      if (start_fill || pf_go) begin
         f_act <= 1'b1; t_alloc <= 1'b1;
       end else if (f_act) begin
         if (beat) begin
@@ -680,8 +725,9 @@ module ppc_icache
       // ---- memory port
       case (mp)
         MP_IDLE: begin                                 // a fill or a single read, both of pa
-          m_addr <= {pa, 2'd0}; m_be <= 4'hF; m_cmd <= start_fill ? MC_LINE_RD : MC_RD;
-          if (start_fill || (pend && p_ui && !f_act && !wk_act)) begin mp <= MP_RQ; m_req <= 1'b1; end
+          m_addr <= (IPF && !pend) ? {pfm_line, 5'd0} : {pa, 2'd0}; m_be <= 4'hF;
+          m_cmd <= (start_fill || (IPF && !pend)) ? MC_LINE_RD : MC_RD;
+          if (start_fill || pf_go || (pend && p_ui && !f_act && !wk_act)) begin mp <= MP_RQ; m_req <= 1'b1; end
         end
         MP_RQ: if (m_ack) begin
           m_req <= 1'b0;

@@ -63,7 +63,8 @@ module ppc_cpu
 `endif
                                       ,
   parameter bit          DT4      = 1'b0,             // a 4-way, 128-entry data TLB (ppc_core DT4)
-  parameter int          DUN      = 4                 // the data micro-TLB's entries (ppc_core DUN)
+  parameter int          DUN      = 4,                // the data micro-TLB's entries (ppc_core DUN)
+  parameter bit          IPF      = 1'b0              // I-cache next-line prefetch (ppc_icache IPF)
 )(
   input  logic        clk,
   input  logic        rst,
@@ -209,7 +210,7 @@ module ppc_cpu
   logic [31:0] dm_addr, dm_wdata;
   logic [3:0]  dm_be, dm_wbe;
 
-  ppc_icache #(.PRE (BTB), .FETCH2 (FETCH2), .ISB (ISB)) u_ic (
+  ppc_icache #(.PRE (BTB), .FETCH2 (FETCH2), .ISB (ISB), .IPF (IPF)) u_ic (
     .clk (clk), .rst (rst),
     .i_req (i_req), .i_addr (i_addr), .i_seq (i_seq), .i_wimg (i_wimg), .i_valid (i_valid), .i_data (i_data),
     .i_way (i_way), .i_arr (i_arr), .i_pa (i_pa), .i_pv (i_pv), .i_pidx (i_pidx), .i_pway (i_pway), .i_ppa (i_ppa),
@@ -218,7 +219,7 @@ module ppc_cpu
     .icbi_req (icbi_req), .icbi_set (icbi_set), .icbi_ack (icbi_ack), .i_idle (),
     .m_req (im_req), .m_cmd (im_cmd), .m_addr (im_addr), .m_be (im_be),
     .m_ack (im_ack), .m_rvalid (im_rvalid), .m_rdata (m_rdata),
-    .t_alloc (), .t_alloc_set (), .t_alloc_way (), .t_alloc_tag ()
+    .t_alloc (), .t_alloc_set (), .t_alloc_way (), .t_alloc_tag (), .t_alloc_pf ()
   );
 
   ppc_dcache #(.SNOOP (SNOOP), .EARLY (LU2), .WV (WV), .XLP (RPX)) u_dc (

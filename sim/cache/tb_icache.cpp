@@ -76,6 +76,24 @@ struct Ref {
     allocs.push_back({s, (unsigned)v, a >> 12});
     return L.w[(a >> 2) & 7];
   }
+  // a prefetch the cache made (ppc_icache IPF): legal only for a line not resident, into the way a demand
+  // fill of that set would take now; filled from memory as it is now; the PLRU is not touched
+  uint64_t pfs = 0;
+  int prefetch(unsigned s, unsigned way, uint32_t tag) {
+    uint32_t a = (tag << 12) | ((s & 127) << 5);
+    if (set_of(a) != s) return 1;
+    if (!ice || ilock || tag == RSV) return 2;
+    if (resident(a)) return 3;
+    int v = -1;
+    for (int w = 0; w < 4 && v < 0; w++) if (!c[s][w].v) v = w;
+    if (v < 0) v = victim_plru(plru[s]);
+    if ((unsigned)v != way) return 4;
+    RefLine &L = c[s][v];
+    L.v = true; L.tag = tag;
+    for (int k = 0; k < 8; k++) L.w[k] = mem.rd(a | (k << 2));
+    pfs++;
+    return 0;
+  }
   void icbi(unsigned s) { for (auto &l : c[s & 127]) l.v = false; if (NSET > 128) for (auto &l : c[128 | (s & 127)]) l.v = false; }
   void flash() { for (auto &s : c) for (auto &l : s) l.v = false; for (auto &p : plru) p = 0; }
 };
@@ -132,7 +150,10 @@ int main(int argc, char **argv) {
 
   while (ph != DONE && (long)cyc < max_cyc) {
     bool iv = t->i_valid; uint32_t idata = t->i_data, idata2 = t->i_data2;
-    if (t->t_alloc) dut_allocs.push_back({t->t_alloc_set, t->t_alloc_way, t->t_alloc_tag});
+    if (t->t_alloc && t->t_alloc_pf) {
+      int e = ref.prefetch(t->t_alloc_set, t->t_alloc_way, t->t_alloc_tag);
+      if (e) { if (errors < 10) std::printf("PREFETCH %d cyc %lu set %u way %u tag %05X\n", e, (unsigned long)cyc, t->t_alloc_set, t->t_alloc_way, t->t_alloc_tag); errors++; }
+    } else if (t->t_alloc) dut_allocs.push_back({t->t_alloc_set, t->t_alloc_way, t->t_alloc_tag});
     t->i_req = 0;
     if (out && iv) {
       out = false;
@@ -250,7 +271,7 @@ int main(int argc, char **argv) {
   std::printf("  ref hits %lu misses %lu bypassed %lu; allocations %zu; singles %zu; port fills %lu single reads %lu\n",
               (unsigned long)ref.hits, (unsigned long)ref.misses, (unsigned long)ref.byp, ref.allocs.size(), ref.singles.size(),
               (unsigned long)ma.n_fill, (unsigned long)ma.n_rd);
-  std::printf("  two-word requests %lu\n", (unsigned long)n_two);
+  std::printf("  two-word requests %lu, prefetches %lu\n", (unsigned long)n_two, (unsigned long)ref.pfs);
   for (int c = 0; c < 2; c++) if (lat_n[c])
     std::printf("  %s request to i_valid: min %lu mean %.2f max %lu cycles (%lu)\n", c ? "miss/bypass" : "hit        ",
                 (unsigned long)lat_mn[c], (double)lat_s[c] / lat_n[c], (unsigned long)lat_mx[c], (unsigned long)lat_n[c]);
