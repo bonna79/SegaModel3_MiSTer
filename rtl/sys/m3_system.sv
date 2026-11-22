@@ -159,6 +159,10 @@ module m3_system
   parameter bit          CPU_WV      = 1'b1,
   // CPU_RPE      a data micro-TLB miss refetched as its translation starts, not after it (ppc_core RPE, D-60)
   parameter bit          CPU_RPE     = 1'b1,
+  // CPU_DT4      a 4-way, 128-entry data TLB (ppc_core DT4; Daytona 2's DTLB reloads -88% in our Supermodel study)
+  parameter bit          CPU_DT4     = 1'b1,
+  // CPU_DUN      the data micro-TLB's entries (ppc_core DUN, 2/4/6/8)
+  parameter int          CPU_DUN     = 4,
   parameter bit          SDR_RA_CONF = 1'b0,            // SDR_RA: arm only on a stream seen (m3_sdr_port RA_CONF)
   // ---- the CPU's miss path, clocks taken out (study R112; all 0: as it was)
   //   BUS_FAST     m3_bus: the CPU's work-RAM reads go to the port from B_IDLE (m3_bus FAST)
@@ -472,7 +476,7 @@ module m3_system
   localparam bit FB_ON  = FBUSY   && (!RELEASE || FBDBG);
   localparam bit XC_ON  = XCAP    && OV_ON && !RELEASE;
 
-  ppc_cpu #(.PVR(PVR), .PVR2(PVR2), .ISB(ISB), .WV(CPU_WV), .RPE(CPU_RPE)) u_cpu (
+  ppc_cpu #(.PVR(PVR), .PVR2(PVR2), .ISB(ISB), .WV(CPU_WV), .RPE(CPU_RPE), .DT4(CPU_DT4), .DUN(CPU_DUN)) u_cpu (
     .clk, .rst(rst_cpu), .pvr_alt(step2),
     .m_req(m_req[0]), .m_cmd(m_cmd[0]), .m_addr(m_addr[0]), .m_be(m_be[0]), .m_wdata(m_wdata[0]), .m_wbe(m_wbe[0]),
     .m_ack(m_ack[0]), .m_wnext(m_wnext[0]), .m_rvalid(m_rvalid[0]), .m_rdata,
