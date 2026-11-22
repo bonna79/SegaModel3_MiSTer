@@ -162,7 +162,7 @@ module m3_system
   // CPU_DT4      a 4-way, 128-entry data TLB (ppc_core DT4; Daytona 2's DTLB reloads -88% in our Supermodel study)
   parameter bit          CPU_DT4     = 1'b1,
   // CPU_DUN      the data micro-TLB's entries (ppc_core DUN, 2/4/6/8)
-  parameter int          CPU_DUN     = 4,
+  parameter int          CPU_DUN     = 8,
   parameter bit          SDR_RA_CONF = 1'b0,            // SDR_RA: arm only on a stream seen (m3_sdr_port RA_CONF)
   // ---- the CPU's miss path, clocks taken out (study R112; all 0: as it was)
   //   BUS_FAST     m3_bus: the CPU's work-RAM reads go to the port from B_IDLE (m3_bus FAST)
