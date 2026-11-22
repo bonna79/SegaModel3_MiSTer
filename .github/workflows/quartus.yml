@@ -62,12 +62,20 @@ jobs:
             for f in snd_setup_to snd_setup_from snd_hold_to snd_recovery_to; do echo "== $f"; cat $f.rpt 2>/dev/null | head -40; done
           fi
 
+      - name: Core name (ci/core_name, e.g. model3daytona)
+        if: always()
+        run: |
+          N=Model3
+          if [ -f ci/core_name ]; then N=$(tr -d ' \n' < ci/core_name); fi
+          [ -f output_files/Model3.rbf ] && [ "$N" != Model3 ] && cp output_files/Model3.rbf "output_files/$N.rbf" || true
+          echo "CORE_NAME=$N" >> "$GITHUB_ENV"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: Model3-${{ github.sha }}
+          name: ${{ env.CORE_NAME }}-${{ github.sha }}
           path: |
-            output_files/Model3.rbf
+            output_files/${{ env.CORE_NAME }}.rbf
             output_files/*.summary
             output_files/*.sta.rpt
             output_files/*.fit.rpt
