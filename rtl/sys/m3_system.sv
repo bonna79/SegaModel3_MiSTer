@@ -926,6 +926,9 @@ module m3_system
   logic        gw_cw, gw_pw;                 // a culling / polygon RAM request acknowledged, first word not back
   // VROM in DDR3 (m3_xmem's port): beats in flight summed every clock (Little: mean beat latency = sum / beats),
   // beats, clocks the port waited for DDR3 to take a burst
+  // diagnostic: the CPU's MMU events a second (DTLB miss, ITLB miss, data micro-TLB replay, fetch translation slow)
+  logic [5:0]  mm_q;
+  logic [31:0] mw_dtlb, mw_itlb, mw_utlb, mw_ftr, mq_dtlb, mq_itlb, mq_utlb, mq_ftr;
   logic [7:0]  gx_bif, gx_bl, gd_q;           // gd_q, gx_*: the inputs a clock late, off the timing paths
   logic        gx_tk, gx_rv, gx_wt;
   logic [39:0] gw_xsum, gq_xsum;
@@ -941,8 +944,10 @@ module m3_system
       gw_dec <= '0; gw_full <= '0; gw_drn <= '0; gw_yng <= '0; gq_dec <= '0; gq_full <= '0; gq_drn <= '0; gq_yng <= '0;
       gq_busy <= '0; gq_ev <= '0; gq_chw <= '0; gq_crw <= '0; gq_run <= '0; gq_cl <= '0; gq_cn <= '0;
       gq_pl <= '0; gq_pn <= '0; gq_starts <= '0;
+      mw_dtlb <= '0; mw_itlb <= '0; mw_utlb <= '0; mw_ftr <= '0; mq_dtlb <= '0; mq_itlb <= '0; mq_utlb <= '0; mq_ftr <= '0;
       gx_bif <= '0; gw_xsum <= '0; gq_xsum <= '0; gw_xbeat <= '0; gw_xwait <= '0; gq_xbeat <= '0; gq_xwait <= '0;
     end else begin
+      mm_q <= cpu_ev_mmu;
       gd_q <= geo_dbg; gx_tk <= xp_req && xp_ack; gx_bl <= xp_blen; gx_rv <= xp_rvalid; gx_wt <= xp_req && !xp_ack;
       gx_bif <= gx_bif + (gx_tk ? gx_bl : 8'd0) - 8'(gx_rv);
       if (cr_ack) gw_cw <= 1'b1; else if (cr_rv) gw_cw <= 1'b0;
@@ -952,6 +957,7 @@ module m3_system
         gq_cl <= gw_cl; gq_cn <= gw_cn; gq_pl <= gw_pl; gq_pn <= gw_pn; gq_starts <= gw_starts;
         gq_dec <= gw_dec; gq_full <= gw_full; gq_drn <= gw_drn; gq_yng <= gw_yng;
         gw_dec <= '0; gw_full <= '0; gw_drn <= '0; gw_yng <= '0;
+        mq_dtlb <= mw_dtlb; mq_itlb <= mw_itlb; mq_utlb <= mw_utlb; mq_ftr <= mw_ftr; mw_dtlb <= '0; mw_itlb <= '0; mw_utlb <= '0; mw_ftr <= '0;
         gq_xsum <= gw_xsum; gq_xbeat <= gw_xbeat; gq_xwait <= gw_xwait; gw_xsum <= '0; gw_xbeat <= '0; gw_xwait <= '0;
         gw_busy <= '0; gw_ev <= '0; gw_chw <= '0; gw_crw <= '0; gw_run <= '0; gw_cl <= '0; gw_cn <= '0;
         gw_pl <= '0; gw_pn <= '0; gw_starts <= '0;
@@ -971,6 +977,7 @@ module m3_system
         gw_drn  <= gw_drn  + 32'(gd_q[6]);
         gw_yng  <= gw_yng  + 32'(gd_q[7]);
         gw_xsum  <= gw_xsum  + 40'(gx_bif);
+        mw_dtlb <= mw_dtlb + 32'(mm_q[0]); mw_itlb <= mw_itlb + 32'(mm_q[1]); mw_utlb <= mw_utlb + 32'(mm_q[4]); mw_ftr <= mw_ftr + 32'(mm_q[5]);
         gw_xbeat <= gw_xbeat + 32'(gx_rv);
         gw_xwait <= gw_xwait + 32'(gx_wt);
       end
@@ -1368,15 +1375,15 @@ module m3_system
         6'd39: ov_v <= XC_ON ? fx_srr0 : 32'd0;
         // row 10: the entry before the most recent one (frozen at the fatal
         // handler: the last entry before the fatal one): vector, SRR0, SRR1, instruction
-        6'd40: ov_v <= XC_ON ? lp_vec : 32'd0;
-        6'd41: ov_v <= XC_ON ? lp_srr0 : 32'd0;
-        6'd42: ov_v <= XC_ON ? lp_srr1 : 32'd0;
-        6'd43: ov_v <= XC_ON ? lp_ins : 32'd0;
+        6'd40: ov_v <= perf[7];   // diagnostic (was lp_vec): CPU redirects a second
+        6'd41: ov_v <= perf[4];   // load-use bubbles
+        6'd42: ov_v <= perf[5];   // mul/div wait
+        6'd43: ov_v <= perf[3];   // decode starved
         // row 11: entries counted; the last DAR and DSISR read by mfspr; the most recent entry's vector
-        6'd44: ov_v <= XC_ON ? xn_cnt : 32'd0;
-        6'd45: ov_v <= XC_ON ? x_dar : 32'd0;
-        6'd46: ov_v <= XC_ON ? x_dsisr : 32'd0;
-        6'd47: ov_v <= XC_ON ? lc_vec : 32'd0;
+        6'd44: ov_v <= mq_dtlb;   // diagnostic (row 11 was the exception capture): DTLB misses a second
+        6'd45: ov_v <= mq_itlb;   // ITLB misses
+        6'd46: ov_v <= mq_utlb;   // data micro-TLB replays
+        6'd47: ov_v <= mq_ftr;    // fetch translation slow cycles
         default: ov_v <= 32'h3B00_0001;   // stage B, build 1
       endcase
     end
