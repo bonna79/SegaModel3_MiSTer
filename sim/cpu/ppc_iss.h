@@ -137,7 +137,9 @@ struct PpcIss {
                             MSR_IR = 0x20, MSR_DR = 0x10;
   uint32_t sr[16] = {};
   struct Tlb { bool v = false; uint32_t vsid = 0, pi = 0, rpn = 0; bool c = false; uint32_t wimg = 0, pp = 0; };
-  Tlb      itlb[32][2], dtlb[32][2];
+  Tlb      itlb[32][2], dtlb[32][4];
+  int      dways = 2;                       // 4: the core's DT4 data TLB (4 ways, the way in turn per set)
+  uint8_t  dfifo[32] = {}, dwy_p = 0;      // (dways 4) each set's next way; the last data miss's way
   uint8_t  ilru[32] = {}, dlru[32] = {};       // the way to replace next
   uint32_t tgpr[4] = {};                       // r0-r3 while MSR[TGPR] = 0 is the other set
   // 603e table-search registers and DSISR/DAR (all zero at hard reset, table 4-9)
@@ -257,19 +259,21 @@ struct PpcIss {
     Tlb *t = ifetch ? itlb[set] : dtlb[set];
     uint8_t *lru = ifetch ? &ilru[set] : &dlru[set];
     int w = -1;
-    for (int k = 1; k >= 0; k--) if (t[k].v && t[k].vsid == vsid && t[k].pi == pi) w = k;
+    int nw = ifetch ? 2 : dways;
+    for (int k = nw - 1; k >= 0; k--) if (t[k].v && t[k].vsid == vsid && t[k].pi == pi) w = k;
     auto miss = [&](uint32_t way) {
       if (probe) return false;
       // 4.5.12-4.5.14, table 4-17: SRR1 holds CR0, KEY, D/I, WAY, S/L
       uint32_t cmpv = 0x80000000 | (vsid << 7) | ((ea >> 22) & 0x3F);
       if (ifetch) { imiss = ea; icmp = cmpv; } else { dmiss = ea; dcmp = cmpv; }
       last_i = ifetch;
-      uint32_t bits = (cr & 0xF0000000) | (key << 19) | (ifetch ? 0x40000 : 0) | (way << 17) | (store ? 0x10000 : 0);
+      if (!ifetch && dways == 4) dwy_p = uint8_t(way);
+      uint32_t bits = (cr & 0xF0000000) | (key << 19) | (ifetch ? 0x40000 : 0) | ((way & 1) << 17) | (store ? 0x10000 : 0);
       exception(ifetch ? 0x1000 : store ? 0x1200 : 0x1100, pc, bits);
       msr |= MSR_TGPR;                                                      // table 4-8
       return false;
     };
-    if (w < 0) return miss(*lru);
+    if (w < 0) return miss((!ifetch && dways == 4) ? dfifo[set] : *lru);
     const Tlb &e = t[w];
     if (ifetch) {
       uint32_t bits = ((key && e.pp == 0) ? 0x08000000 : 0) | ((e.wimg & 1) ? 0x10000000 : 0);
@@ -285,7 +289,8 @@ struct PpcIss {
   }
   void tlb_load(bool inst, uint32_t ea) {                                    // tlbld / tlbli (2.3.8)
     uint32_t set = (ea >> 12) & 31, w = (srr1 >> 17) & 1, cmpv = inst ? icmp : dcmp, rpa = sp(982);
-    Tlb &e = (inst ? itlb : dtlb)[set][w];
+    if (!inst && dways == 4) { w = dwy_p; if (w == dfifo[set]) dfifo[set] = uint8_t((dfifo[set] + 1) & 3); }
+    Tlb &e = inst ? itlb[set][w] : dtlb[set][w];
     e.v = cmpv >> 31; e.vsid = (cmpv >> 7) & 0xFFFFFF; e.pi = (ea >> 17) & 0x7FF;
     e.rpn = rpa >> 12; e.c = (rpa >> 7) & 1; e.wimg = (rpa >> 3) & 15; e.pp = rpa & 3;
     (inst ? ilru : dlru)[set] = uint8_t(w ^ 1);
@@ -767,7 +772,7 @@ struct PpcIss {
           case 595: gpr[rd] = sr[(in >> 16) & 15]; break;
           case 659: gpr[rd] = sr[b >> 28]; break;
           // tlbie: both ways of the set, both TLBs (5.4.3.2)
-          case 306: { uint32_t set = (b >> 12) & 31; for (int w = 0; w < 2; w++) itlb[set][w].v = dtlb[set][w].v = false; break; }
+          case 306: { uint32_t set = (b >> 12) & 31; for (int w = 0; w < 2; w++) itlb[set][w].v = false; for (int w = 0; w < 4; w++) dtlb[set][w].v = false; break; }
           case 978:  tlb_load(false, b); break;                 // tlbld
           case 1010: tlb_load(true, b);  break;                 // tlbli
           // Cache operations (3.7). Their effect on the caches is not modelled:

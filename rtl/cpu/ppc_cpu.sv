@@ -61,6 +61,9 @@ module ppc_cpu
 `else
                                       1'b1
 `endif
+                                      ,
+  parameter bit          DT4      = 1'b0,             // a 4-way, 128-entry data TLB (ppc_core DT4)
+  parameter int          DUN      = 4                 // the data micro-TLB's entries (ppc_core DUN)
 )(
   input  logic        clk,
   input  logic        rst,
@@ -159,7 +162,7 @@ module ppc_cpu
   logic [19:0] d_xpa;
   logic [3:0]  d_xwimg;
 
-  ppc_core #(.RPE (RPE), .RPX (RPX), .F1S (F1S), .F1C (F1C), .RESET_PC (RESET_PC), .PVR (PVR), .PVR2 (PVR2), .BTB (BTB), .FETCH2 (FETCH2), .LA (LA), .LU2 (LU2), .FAST (FAST), .EWL (EWL)) u_core (
+  ppc_core #(.DT4 (DT4), .DUN (DUN), .RPE (RPE), .RPX (RPX), .F1S (F1S), .F1C (F1C), .RESET_PC (RESET_PC), .PVR (PVR), .PVR2 (PVR2), .BTB (BTB), .FETCH2 (FETCH2), .LA (LA), .LU2 (LU2), .FAST (FAST), .EWL (EWL)) u_core (
     .clk (clk), .rst (rst), .pvr_alt (pvr_alt),
     .i_req (i_req), .i_addr (i_addr), .i_wimg (i_wimg), .i_seq (i_seq), .i_valid (i_valid), .i_data (i_data),
     .i_way (i_way), .i_arr (i_arr), .i_pa (i_pa), .i_pv (i_pv), .i_pidx (i_pidx), .i_pway (i_pway), .i_ppa (i_ppa),
