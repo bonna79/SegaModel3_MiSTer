@@ -174,6 +174,11 @@ module ppc_core
   // cycle, so this changes only the timing (a miss is a replay). DRP: its replacement, 0 in turn (a pointer),
   // 1 least recently used (an empty entry first); both are timing only
   parameter int DUN = 4,
+  // DT4 = 1: a 4-way data TLB, 128 entries (32 sets x 4 ways, our study 2026-11-22: Daytona 2's DTLB reloads
+  // -88%); the set is still EA[15-19], so tlbie still empties one set (all its ways). The handler's tlbld
+  // writes the way the miss chose (a C = 0 store's hit way, else the set's next way in turn), not SRR1[WAY].
+  // 0: the 603e's 2 ways (5.4.3.1)
+  parameter bit DT4 = 1'b0,
   parameter bit DRP = 1'b1,
   // FAST = 0: no single unit (ppc_fpu_fast SF = 0); every multiply-add op goes to the double unit, frsqrte
   // still to its estimate pipe. Same results, single ops at the double unit's latency (study R129)
@@ -462,6 +467,11 @@ module ppc_core
   // block gives, so that lookup waits a cycle (itw_q, dtw_q) and reads again.
   (* ramstyle = "M10K, no_rw_check" *) logic [62:0] dtlb0 [0:31];
   (* ramstyle = "M10K, no_rw_check" *) logic [62:0] dtlb1 [0:31];
+  (* ramstyle = "M10K, no_rw_check" *) logic [62:0] dtlb2 [0:31];   // (DT4)
+  (* ramstyle = "M10K, no_rw_check" *) logic [62:0] dtlb3 [0:31];
+  logic [62:0] dt2_q, dt3_q;
+  logic [31:0][1:0] dfifo;                             // (DT4) per set: the way to load next
+  logic [1:0]  dwy_p;                                  // (DT4) the way the last DTLB miss taken chose
   (* ramstyle = "M10K, no_rw_check" *) logic [62:0] itlb0 [0:31];
   (* ramstyle = "M10K, no_rw_check" *) logic [62:0] itlb1 [0:31];
   logic        itw_q, dtw_q;
@@ -4522,8 +4532,13 @@ module ppc_core
   wire [62:0] sl_t1   = dt1_q;
   wire        sl_h0   = sl_t0[62] && sl_t0[61:38] == sl_sr[23:0] && sl_t0[37:27] == sl_ea[27:17];
   wire        sl_h1   = sl_t1[62] && sl_t1[61:38] == sl_sr[23:0] && sl_t1[37:27] == sl_ea[27:17];
-  wire        sl_hit  = sl_h0 || sl_h1;
-  wire [62:0] sl_e    = sl_h0 ? sl_t0 : sl_t1;         // a double hit takes way 0
+  wire [62:0] sl_t2   = dt2_q;
+  wire [62:0] sl_t3   = dt3_q;
+  wire        sl_h2   = DT4 && sl_t2[62] && sl_t2[61:38] == sl_sr[23:0] && sl_t2[37:27] == sl_ea[27:17];
+  wire        sl_h3   = DT4 && sl_t3[62] && sl_t3[61:38] == sl_sr[23:0] && sl_t3[37:27] == sl_ea[27:17];
+  wire        sl_hit  = sl_h0 || sl_h1 || sl_h2 || sl_h3;
+  wire [62:0] sl_e    = sl_h0 ? sl_t0 : sl_h1 ? sl_t1 : sl_h2 ? sl_t2 : sl_t3;   // a double hit takes the lower way
+  wire [1:0]  sl_hw   = sl_h0 ? 2'd0 : sl_h1 ? 2'd1 : sl_h2 ? 2'd2 : 2'd3;     // (DT4) the hit's way
   wire        sl_key  = msr_q[MSR_PR] ? sl_sr[29] : sl_sr[30];
   wire        sl_t    = sl_sr[31];
   wire        sl_rok  = !sl_key || sl_e[1:0] != 2'd0;
@@ -4558,15 +4573,20 @@ module ppc_core
   wire        sl_pd1  = sl_pf(sl_t1[1:0], sl_key, m.st);
   wire        sl_cs0  = m.st && !sl_pd0 && !sl_t0[6];    // a store to an allowed entry with C = 0
   wire        sl_cs1  = m.st && !sl_pd1 && !sl_t1[6];
-  wire        sl_prw  = sl_h0 ? sl_pd0 : sl_h1 && sl_pd1;   // the hit's PP refuses it
-  wire        sl_csw  = sl_h0 ? sl_cs0 : sl_h1 ? sl_cs1 : 1'b1;   // a miss, or C = 0 on a store
+  wire        sl_pd2  = sl_pf(sl_t2[1:0], sl_key, m.st);
+  wire        sl_pd3  = sl_pf(sl_t3[1:0], sl_key, m.st);
+  wire        sl_cs2  = m.st && !sl_pd2 && !sl_t2[6];
+  wire        sl_cs3  = m.st && !sl_pd3 && !sl_t3[6];
+  wire        sl_prw  = sl_h0 ? sl_pd0 : sl_h1 ? sl_pd1 : sl_h2 ? sl_pd2 : sl_h3 && sl_pd3;   // the hit's PP refuses it
+  wire        sl_csw  = sl_h0 ? sl_cs0 : sl_h1 ? sl_cs1 : sl_h2 ? sl_cs2 : sl_h3 ? sl_cs3 : 1'b1;   // a miss, or C = 0 on a store
   wire        sl_dsi_n = sl_bat || (!sl_t ? sl_prw : 1'b1);
   wire        sl_tm_n  = !sl_bat && !sl_t && sl_csw;
   wire        sl_prot_n = sl_bat || (!sl_t && sl_prw);
   function automatic logic sl_wf(input logic [1:0] pp, input logic key, input logic c);
     sl_wf = (key ? pp == 2'd2 : pp != 2'd3) && c;
   endfunction
-  wire        sl_w_n   = sl_h0 ? sl_wf(sl_t0[1:0], sl_key, sl_t0[6]) : sl_wf(sl_t1[1:0], sl_key, sl_t1[6]);
+  wire        sl_w_n   = sl_h0 ? sl_wf(sl_t0[1:0], sl_key, sl_t0[6]) : sl_h1 ? sl_wf(sl_t1[1:0], sl_key, sl_t1[6]) :
+                         sl_h2 ? sl_wf(sl_t2[1:0], sl_key, sl_t2[6]) : sl_wf(sl_t3[1:0], sl_key, sl_t3[6]);
 `ifdef VERILATOR
   always_ff @(posedge clk)
     if (!rst &&
@@ -4576,9 +4596,10 @@ module ppc_core
       $fatal(1, "slow translation's per-way outcome against the hit's entry");
 `endif
   logic       sl_done, sl_dsi_q, sl_tm_q, sl_prot_q, sl_t_q, sl_key_q, sl_way_q, sl_w_q;
-  logic [19:0] sl_pa0_q, sl_pa1_q;                      // both ways' RPN, chosen at the fill
-  logic [3:0]  sl_wimg0_q, sl_wimg1_q;                  // and WIMG
+  logic [19:0] sl_pa0_q, sl_pa1_q, sl_pa2_q, sl_pa3_q;  // every way's RPN, chosen at the fill
+  logic [3:0]  sl_wimg0_q, sl_wimg1_q, sl_wimg2_q, sl_wimg3_q;   // and WIMG
   logic        sl_h0_q;
+  logic [1:0]  sl_hw_q, sl_wy_q;                        // (DT4) the hit's way; the way a miss would load
   logic [23:0] sl_vsid_q;
   always_ff @(posedge clk) begin
     if (rst || mem_adv) sl_done <= 1'b0;
@@ -4595,13 +4616,20 @@ module ppc_core
       sl_key_q  <= sl_key;
       // SRR1[WAY]: replacement order, or for a store that hit an entry with
       // C = 0 the way that hit, so the handler's tlbld replaces it
-      sl_way_q  <= (sl_hit && m.st) ? !sl_h0 : dlru[sl_ea[16:12]];
+      sl_way_q  <= DT4 ? ((sl_hit && m.st) ? sl_hw[0] : dfifo[sl_ea[16:12]][0])   // (DT4: the chosen way's bit 0)
+                       : (sl_hit && m.st) ? !sl_h0 : dlru[sl_ea[16:12]];
       sl_w_q    <= sl_w_n;                  // a store may use it: PP, key, C
       sl_pa0_q  <= sl_t0[26:7];
       sl_pa1_q  <= sl_t1[26:7];
       sl_wimg0_q <= sl_t0[5:2];
       sl_wimg1_q <= sl_t1[5:2];
       sl_h0_q   <= sl_h0;
+      sl_pa2_q  <= sl_t2[26:7];
+      sl_pa3_q  <= sl_t3[26:7];
+      sl_wimg2_q <= sl_t2[5:2];
+      sl_wimg3_q <= sl_t3[5:2];
+      sl_hw_q   <= sl_hw;
+      sl_wy_q   <= (sl_hit && m.st) ? sl_hw : dfifo[sl_ea[16:12]];
       sl_vsid_q <= sl_sr[23:0];
     end
   end
@@ -4717,8 +4745,10 @@ module ppc_core
     end
     // tlbie: both ways of the set in both TLBs (5.4.3.2); tlbld / tlbli: the
     // set's way SRR1[WAY] (2.3.8)
-    if (m_ok && (m.tlbie || (m.tlbl && !m.insn[6] && !m_tway))) dtlb0[m.ya[4:0]] <= m_tlbe;
-    if (m_ok && (m.tlbie || (m.tlbl && !m.insn[6] &&  m_tway))) dtlb1[m.ya[4:0]] <= m_tlbe;
+    if (m_ok && (m.tlbie || (m.tlbl && !m.insn[6] && (DT4 ? dwy_p == 2'd0 : !m_tway)))) dtlb0[m.ya[4:0]] <= m_tlbe;
+    if (m_ok && (m.tlbie || (m.tlbl && !m.insn[6] && (DT4 ? dwy_p == 2'd1 :  m_tway)))) dtlb1[m.ya[4:0]] <= m_tlbe;
+    if (DT4 && m_ok && (m.tlbie || (m.tlbl && !m.insn[6] && dwy_p == 2'd2))) dtlb2[m.ya[4:0]] <= m_tlbe;
+    if (DT4 && m_ok && (m.tlbie || (m.tlbl && !m.insn[6] && dwy_p == 2'd3))) dtlb3[m.ya[4:0]] <= m_tlbe;
     if (m_ok && (m.tlbie || (m.tlbl &&  m.insn[6] && !m_tway))) itlb0[m.ya[4:0]] <= m_tlbe;
     if (m_ok && (m.tlbie || (m.tlbl &&  m.insn[6] &&  m_tway))) itlb1[m.ya[4:0]] <= m_tlbe;
   end
@@ -4731,6 +4761,8 @@ module ppc_core
     it1_q <= itlb1[itr_n];
     dt0_q <= dtlb0[dtr_n];
     dt1_q <= dtlb1[dtr_n];
+    dt2_q <= DT4 ? dtlb2[dtr_n] : 63'd0;
+    dt3_q <= DT4 ? dtlb3[dtr_n] : 63'd0;
     itw_q <= m_ok && (m.tlbie || (m.tlbl && m.insn[6]));
     dtw_q <= m_ok && (m.tlbie || (m.tlbl && !m.insn[6]));
   end
@@ -4739,7 +4771,8 @@ module ppc_core
   always_ff @(posedge clk) tq_v <= !rst;
   always_ff @(posedge clk)
     if (!rst && tq_v && ((!itw_q && (it0_q != itlb0[f_rsp_pc[16:12]] || it1_q != itlb1[f_rsp_pc[16:12]])) ||
-                 (m.valid && (!dtw_q && (dt0_q != dtlb0[m_xpg[4:0]] || dt1_q != dtlb1[m_xpg[4:0]])))))
+                 (m.valid && (!dtw_q && (dt0_q != dtlb0[m_xpg[4:0]] || dt1_q != dtlb1[m_xpg[4:0]] ||
+                                         (DT4 && (dt2_q != dtlb2[m_xpg[4:0]] || dt3_q != dtlb3[m_xpg[4:0]])))))))
       $fatal(1, "TLB block reads against the arrays at f_rsp_pc's set and MEM's page");
 `endif
   always_ff @(posedge clk) begin
@@ -4752,6 +4785,18 @@ module ppc_core
         if (m.insn[6]) ilru[m.ya[4:0]] <= !m_tway;
         else           dlru[m.ya[4:0]] <= !m_tway;
       end
+    end
+  end
+  // (DT4) the way a DTLB miss taken chose (the faulting access's slow lookup, in sl_wy_q), kept for the
+  // handler's tlbld (the handler runs untranslated, so no other data lookup comes between); each set's
+  // turn moves on when its turn's way is loaded
+  always_ff @(posedge clk) begin
+    if (rst || !DT4) begin
+      dfifo <= '0;
+      dwy_p <= 2'd0;
+    end else begin
+      if (mem_adv && !wb_trap && m_xcp && m.rp && sl_flt && sl_tm_q) dwy_p <= sl_wy_q;
+      if (m_ok && m.tlbl && !m.insn[6] && dwy_p == dfifo[m.ya[4:0]]) dfifo[m.ya[4:0]] <= dfifo[m.ya[4:0]] + 2'd1;
     end
   end
   always_ff @(posedge clk) begin
@@ -4806,9 +4851,12 @@ module ppc_core
         if (du_v[k]) begin
           automatic logic [31:0] sr = dsr_mem[du_pg[k][19:16]];
           automatic logic [62:0] t0 = dtlb0[du_pg[k][4:0]], t1 = dtlb1[du_pg[k][4:0]];
+          automatic logic [62:0] t2 = dtlb2[du_pg[k][4:0]], t3 = dtlb3[du_pg[k][4:0]];
           automatic logic h0 = t0[62] && t0[61:38] == sr[23:0] && t0[37:27] == du_pg[k][15:5];
           automatic logic h1 = t1[62] && t1[61:38] == sr[23:0] && t1[37:27] == du_pg[k][15:5];
-          if (!(h0 ? t0[26:7] == du_pa[k] : h1 && t1[26:7] == du_pa[k]))
+          automatic logic h2 = DT4 && t2[62] && t2[61:38] == sr[23:0] && t2[37:27] == du_pg[k][15:5];
+          automatic logic h3 = DT4 && t3[62] && t3[61:38] == sr[23:0] && t3[37:27] == du_pg[k][15:5];
+          if (!(h0 ? t0[26:7] == du_pa[k] : h1 ? t1[26:7] == du_pa[k] : h2 ? t2[26:7] == du_pa[k] : h3 && t3[26:7] == du_pa[k]))
             $fatal(1, "data micro-TLB %0d (page %05X) is not the TLB's translation", k, du_pg[k]);
         end
       for (int e = 0; e < IUN; e++)
@@ -4884,9 +4932,11 @@ module ppc_core
         if (m.srw ? du_pg[k][19:16] == m.ya[19:16] : du_pg[k][4:0] == m.ya[4:0]) du_v[k] <= 1'b0;
     end else if (du_fill) begin
       du_v[du_fx]  <= 1'b1;
-      du_wimg[du_fx] <= sl_h0_q ? sl_wimg0_q : sl_wimg1_q;
+      du_wimg[du_fx] <= !DT4 ? (sl_h0_q ? sl_wimg0_q : sl_wimg1_q) :
+                        sl_hw_q == 2'd0 ? sl_wimg0_q : sl_hw_q == 2'd1 ? sl_wimg1_q : sl_hw_q == 2'd2 ? sl_wimg2_q : sl_wimg3_q;
       du_pg[du_fx] <= sl_ea[31:12];
-      du_pa[du_fx] <= sl_h0_q ? sl_pa0_q : sl_pa1_q;
+      du_pa[du_fx] <= !DT4 ? (sl_h0_q ? sl_pa0_q : sl_pa1_q) :
+                      sl_hw_q == 2'd0 ? sl_pa0_q : sl_hw_q == 2'd1 ? sl_pa1_q : sl_hw_q == 2'd2 ? sl_pa2_q : sl_pa3_q;
       du_wr[du_fx] <= sl_w_q;
       du_pr[du_fx] <= msr_q[MSR_PR];
       du_nx        <= ((DUN & (DUN - 1)) != 0 && du_nx == DUW'(DUN - 1)) ? '0 : DUW'(du_nx + 1'b1);   // (6: wraps at 6)

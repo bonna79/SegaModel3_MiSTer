@@ -50,7 +50,9 @@ module ppc_cpu
   parameter bit          FAST     = 1'b1,             // the single-precision unit (ppc_core FAST; 0: one FMA)
   parameter bit          EWL      = 1'b0,             // the early word as four ways and the way (ppc_core EWL, R140; 1: +119 ALUTs)
   parameter bit          WV       = 1'b1,             // the data cache's write-validate (ppc_dcache WV, study D-60): m_wbe carries a cast-out's lanes
-  parameter bit          RPE      = 1'b1              // a data micro-TLB miss refetched as its translation starts (ppc_core RPE, D-60)
+  parameter bit          RPE      = 1'b1,             // a data micro-TLB miss refetched as its translation starts (ppc_core RPE, D-60)
+  parameter bit          DT4      = 1'b0,             // a 4-way, 128-entry data TLB (ppc_core DT4)
+  parameter int          DUN      = 4                 // the data micro-TLB's entries (ppc_core DUN)
 )(
   input  logic        clk,
   input  logic        rst,
@@ -139,7 +141,7 @@ module ppc_cpu
   logic [6:0]  icbi_set;
   logic        d_resv, d_cond, res_kill;
 
-  ppc_core #(.RPE (RPE), .RESET_PC (RESET_PC), .PVR (PVR), .PVR2 (PVR2), .BTB (BTB), .FETCH2 (FETCH2), .LA (LA), .LU2 (LU2), .FAST (FAST), .EWL (EWL)) u_core (
+  ppc_core #(.DT4 (DT4), .DUN (DUN), .RPE (RPE), .RESET_PC (RESET_PC), .PVR (PVR), .PVR2 (PVR2), .BTB (BTB), .FETCH2 (FETCH2), .LA (LA), .LU2 (LU2), .FAST (FAST), .EWL (EWL)) u_core (
     .clk (clk), .rst (rst), .pvr_alt (pvr_alt),
     .i_req (i_req), .i_addr (i_addr), .i_wimg (i_wimg), .i_seq (i_seq), .i_valid (i_valid), .i_data (i_data),
     .i_way (i_way), .i_arr (i_arr), .i_pa (i_pa), .i_pv (i_pv), .i_pidx (i_pidx), .i_pway (i_pway), .i_ppa (i_ppa),

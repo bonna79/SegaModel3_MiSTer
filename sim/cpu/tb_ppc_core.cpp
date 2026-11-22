@@ -126,6 +126,7 @@ using Top = Vppc_core;
 
 namespace {
 
+bool g_dt4 = false;                           // --dt4: the reference model with the core's 4-way DTLB (ppc_core DT4)
 bool dtrace = getenv("DTRACE") != nullptr;   // every data request, answer and retirement
 int g_dlat = 0, g_ilat = 0, g_rdy = 0;
 bool g_board = false;
@@ -1376,6 +1377,7 @@ bool run(uint32_t seed, int len, int max_wait, int mode, uint64_t &insns, uint64
   auto acc_ld = [](uint32_t a) { return (uint64_t(1) << 40) | a; };
   auto acc_st = [](uint32_t a, uint8_t v) { return (uint64_t(2) << 40) | (uint64_t(v) << 32) | a; };
   PpcIss iss;
+  if (g_dt4) iss.dways = 4;
   // FPR writes: the RTL's in the order its write port makes them (FPU
   // results complete after younger instructions retire), the model's in
   // program order; matched per register (no two writes of one FPR are ever
@@ -1923,6 +1925,7 @@ int main(int argc, char **argv) {
     else if (!strcmp(argv[i], "--ilat") && i + 1 < argc) g_ilat = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--rdy") && i + 1 < argc) g_rdy = atoi(argv[++i]);
     else if (!strcmp(argv[i], "--loops")) g_loops = true;
+    else if (!strcmp(argv[i], "--dt4")) g_dt4 = true;                     // the core built with DT4 = 1
     else if (!strcmp(argv[i], "--intdrop") && i + 1 < argc) g_intdrop = uint32_t(atoi(argv[++i]));   // study R104
     else if (!strcmp(argv[i], "--mis")) g_mis = true;
     else if (!strcmp(argv[i], "--xpage")) g_xpage = true;
