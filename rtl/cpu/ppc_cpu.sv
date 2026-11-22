@@ -50,7 +50,8 @@ module ppc_cpu
   parameter bit          FAST     = 1'b1,             // the single-precision unit (ppc_core FAST; 0: one FMA)
   parameter bit          EWL      = 1'b0,             // the early word as four ways and the way (ppc_core EWL, R140; 1: +119 ALUTs)
   parameter bit          WV       = 1'b1,             // the data cache's write-validate (ppc_dcache WV, study D-60): m_wbe carries a cast-out's lanes
-  parameter bit          RPE      = 1'b1              // a data micro-TLB miss refetched as its translation starts (ppc_core RPE, D-60)
+  parameter bit          RPE      = 1'b1,             // a data micro-TLB miss refetched as its translation starts (ppc_core RPE, D-60)
+  parameter bit          IPF      = 1'b0              // I-cache next-line prefetch (ppc_icache IPF)
 )(
   input  logic        clk,
   input  logic        rst,
@@ -180,7 +181,7 @@ module ppc_cpu
   logic [31:0] dm_addr, dm_wdata;
   logic [3:0]  dm_be, dm_wbe;
 
-  ppc_icache #(.PRE (BTB), .FETCH2 (FETCH2), .ISB (ISB)) u_ic (
+  ppc_icache #(.PRE (BTB), .FETCH2 (FETCH2), .ISB (ISB), .IPF (IPF)) u_ic (
     .clk (clk), .rst (rst),
     .i_req (i_req), .i_addr (i_addr), .i_seq (i_seq), .i_wimg (i_wimg), .i_valid (i_valid), .i_data (i_data),
     .i_way (i_way), .i_arr (i_arr), .i_pa (i_pa), .i_pv (i_pv), .i_pidx (i_pidx), .i_pway (i_pway), .i_ppa (i_ppa),
@@ -189,7 +190,7 @@ module ppc_cpu
     .icbi_req (icbi_req), .icbi_set (icbi_set), .icbi_ack (icbi_ack), .i_idle (),
     .m_req (im_req), .m_cmd (im_cmd), .m_addr (im_addr), .m_be (im_be),
     .m_ack (im_ack), .m_rvalid (im_rvalid), .m_rdata (m_rdata),
-    .t_alloc (), .t_alloc_set (), .t_alloc_way (), .t_alloc_tag ()
+    .t_alloc (), .t_alloc_set (), .t_alloc_way (), .t_alloc_tag (), .t_alloc_pf ()
   );
 
   ppc_dcache #(.SNOOP (SNOOP), .EARLY (LU2), .WV (WV)) u_dc (
