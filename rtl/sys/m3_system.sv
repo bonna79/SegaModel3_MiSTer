@@ -189,6 +189,8 @@ module m3_system
   parameter int          SDR_PW_DLY  = 0,
   //   BUS_R3P      m3_bus: writes to the Real3D's host port posted in an eight-word buffer, the bus freed (m3_bus R3P)
   parameter bit          BUS_R3P     = 1'b0,
+  //   BUS_R3O      m3_bus: R3P's ordering wait for the owner's own posted words only (m3_bus R3O, our fork)
+  parameter bit          BUS_R3O     = 1'b0,
   // ---- the cabinet's controls (m3_inputs): INPUTS 0 ties m3_io's inputs idle (in0 FF, test and service high,
   //   ports C and D the configuration's idle bytes, the ADC 00), the core before them; INP_DRIVE, INP_GUN,
   //   INP_FISH build the driving, analog-gun and fishing profiles (off: those games read the generic ports)
@@ -697,7 +699,7 @@ module m3_system
 
   logic       tg_nw;                      // a write into the name table (the bus's tr_nw; R103, R179)
   m3_bus #(.AW(AW), .SDR_CROM(SDR_CROM), .SDR_FIXED(SDR_FIXED), .SDR_BACKUP(SDR_BACKUP), .SDR_RAM(SDR_RAM),
-           .SDR_VRAM(SDR_VRAM), .CROM_BANKS(CROM_BANKS), .MIDI_GAP(MIDI_GAP_C), .FAST(BUS_FAST), .R3P(BUS_R3P), .TGT(TG_TIMING), .TG_MHZ(CLK_MHZ),
+           .SDR_VRAM(SDR_VRAM), .CROM_BANKS(CROM_BANKS), .MIDI_GAP(MIDI_GAP_C), .FAST(BUS_FAST), .R3P(BUS_R3P), .R3O(BUS_R3O), .TGT(TG_TIMING), .TG_MHZ(CLK_MHZ),
            .C106_M10K(BR_C106), .OWIRE(BR_BUS), .WD_DEC(BR_BUS), .W2(W2)
 `ifdef M3_STEP2_BUS
            , .STEP2(STEP2), .SDR_FIX8(SDR_FIX8), .RTC_HZ(CLK_HZ), .EXT_SEC(BR_SEC)

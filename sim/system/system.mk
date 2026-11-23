@@ -163,7 +163,7 @@ SDR_G_all = -GL16=1 -GBXOR=1 -GLW1=1 -GPAIR=1 -GRA=1 -GRA_CONF=1 -GPW=1
 SDR_G_rel = -GL16=1 -GBXOR=1 -GLW1=1 -GPAIR=1 -GPW=1
 # R112: the miss path's clocks, each on the release set and all together (FAST is the bus's; the port
 # bench builds it but has no bus); n112: all five; a112: all five with the read-ahead
-R112_VARIANTS = fwd freq fdsp hitrd fast n112 a112 d112 r3p b112 bxc b112c
+R112_VARIANTS = fwd freq fdsp hitrd fast n112 a112 d112 r3p b112 bxc b112c b112o
 SDR_G_fwd = $(SDR_G_rel) -GFWD=1
 SDR_G_freq = $(SDR_G_rel) -GFREQ=1
 SDR_G_fdsp = $(SDR_G_rel) -GFDSP=1
@@ -177,6 +177,8 @@ SDR_G_d112 = $(SDR_G_n112) -GPW_DLY=16
 SDR_G_r3p = $(SDR_G_rel) -GR3P=1
 # b112: the set Model3.sv builds (R112's six, HITRD off)
 SDR_G_b112 = $(SDR_G_rel) -GFWD=1 -GFREQ=1 -GFDSP=1 -GFAST=1 -GPW_DLY=8 -GR3P=1
+# b112o (our fork): b112 with R3O, R114's wait for the owner's own posted words (run with --r3o)
+SDR_G_b112o = $(SDR_G_b112) -GR3O=1
 # bxc: BXC (the chip hash) alone, and on b112 (the set Model3.sv builds)
 SDR_G_bxc = -GBXC=1
 SDR_G_b112c = $(SDR_G_b112) -GBXC=1
@@ -326,6 +328,9 @@ test_bus_r107: $(foreach v,$(SDR_VARIANTS),$(SYS_OBJ)/bus_$(v)/Vm3_bus_tb)
 	./$(SYS_OBJ)/bus_b112/Vm3_bus_tb 100000 37 --bxor --r3stall
 	./$(SYS_OBJ)/bus_b112/Vm3_bus_tb 100000 38 --bxor --r3slow
 	./$(SYS_OBJ)/bus_b112/Vm3_bus_tb 100000 39 --bxor
+	./$(SYS_OBJ)/bus_b112o/Vm3_bus_tb 100000 40 --bxor --r3o
+	./$(SYS_OBJ)/bus_b112o/Vm3_bus_tb 100000 41 --bxor --r3o --r3stall
+	./$(SYS_OBJ)/bus_b112o/Vm3_bus_tb 100000 42 --bxor --r3o --r3slow
 
 # m3_xcrom (banked CROM in the extra memory, study R170) against a model of the bus and a DDR3 port
 $(SYS_OBJ)/xcrom/Vm3_xcrom: rtl/cpu/ppc_cache_pkg.sv rtl/sys/m3_xcrom.sv sim/system/tb_m3_xcrom.cpp

@@ -293,7 +293,7 @@ wire [2:0] sdr_cap2 = 3'd2;
 `endif
 m3_system #(.CLK_HZ(SYS_HZ), .CPI_MON(1'b1), .INPUTS(INPUTS), .INP_LEAN(INP_LEAN), .SDR_BXOR(1'b1), .SDR_BXC(1'b1), .SDR_L16(1'b1), .SDR_LW1(1'b1),
             .SDR_PAIR(1'b1), .SDR_PW(1'b1),
-            .BUS_FAST(1'b1), .BUS_R3P(1'b1), .SDR_FREQ(1'b1), .SDR_FWD(1'b1), .SDR_FDSP(1'b1),
+            .BUS_FAST(1'b1), .BUS_R3P(1'b1), .BUS_R3O(1'b1), .SDR_FREQ(1'b1), .SDR_FWD(1'b1), .SDR_FDSP(1'b1),
             .SDR_PW_DLY(8), .ISB(1'b1), .W2(CPU_SDR2)) sys3
 (
 	.clk(clk_sys), .mem_rst_n(mem_rst_n), .reset(RESET | status[0] | buttons[1]),

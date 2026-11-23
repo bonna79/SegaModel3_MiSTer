@@ -116,6 +116,7 @@ module m3_bus
   parameter int          RTC_HZ     = 100_000_000,    // clocks a second, for the RTC
   parameter bit          FAST       = 1'b0,           // the CPU's work-RAM reads to the SDRAM port from B_IDLE, past B_DEC (R112)
   parameter bit          R3P        = 1'b0,           // writes to the Real3D's host port posted in an eight-word buffer (R112)
+  parameter bit          R3O        = 1'b0,           // R3P's R114 wait for the owner's own posted words only (our fork, above)
   parameter bit          TGT        = 1'b0,           // the tile generator's bus timing (R152)
   parameter int          TG_MHZ     = 100,            // the clock, for TGT's 32 MHz VRAM clock
   // The bridges pass (all zero-cycle; 1 / 0 as before):
@@ -712,12 +713,27 @@ module m3_bus
   logic        r3_push;
   logic [59:0] r3_pd;
   always_ff @(posedge clk) if (R3P && r3_push) r3q[r3_wp[2:0]] <= r3_pd;
+  // R3O (our fork): which master posted each word, and how many each has in the buffer. R114's wait is the
+  // MPC105's: a processor access to PCI is ordered behind the processor's own posted writes. The 53C810 / DMA
+  // device's writes to the Real3D are PCI-to-PCI on the board and never enter those buffers, so the CPU's
+  // accesses (the DMA's status polls, the vblank handler's I/O) wait only for the CPU's words, and a master
+  // for its own. An access to the Real3D itself still waits for every word (B_DEC, B_BEAT), so the Real3D
+  // sees all writes in bus order; the buffer stays one FIFO, so the host port's order is unchanged.
+  logic [7:0]  r3m;                // per entry: posted by master 1
+  logic        r3_pm;              // r3_pd's master
+  logic [3:0]  r3_n0, r3_n1;       // words in the buffer from master 0, 1
+  wire         r3_hm = r3m[r3_rp[2:0]];
   always_ff @(posedge clk)
-    if (rst || !R3P) begin r3_wp <= '0; r3_rp <= '0; end
+    if (rst || !R3P) begin r3_wp <= '0; r3_rp <= '0; r3_n0 <= '0; r3_n1 <= '0; end
     else begin
-      if (r3_push) r3_wp <= r3_wp + 4'd1;
+      if (r3_push) begin r3_wp <= r3_wp + 4'd1; r3m[r3_wp[2:0]] <= r3_pm; end
       if (r3_go)   r3_rp <= r3_rp + 4'd1;
+      r3_n0 <= r3_n0 + 4'(r3_push && !r3_pm) - 4'(r3_go && !r3_hm);
+      r3_n1 <= r3_n1 + 4'(r3_push &&  r3_pm) - 4'(r3_go &&  r3_hm);
     end
+  // the owner's (who) words still in the buffer, or being pushed this edge
+  wire         r3_own = R3O ? (who ? (r3_n1 != 4'd0 || (r3_push && r3_pm)) : (r3_n0 != 4'd0 || (r3_push && !r3_pm)))
+                            : (!r3_empty || r3_push);
 
   // ---- TGT (R152): the tile generator's bus timing ----
   // Supermodel 0d1dd3d (gm_matthew's measurements on Scud Race Plus), with its units: one VRAM clock (1/32 us)
@@ -847,7 +863,8 @@ module m3_bus
             s_w2 <= W2 && (addr[31:23] == 9'd0);     // work RAM (the decode's first case)
             s_wdata <= WD_DEC ? m_wdata[who] : wd; s_wbe <= m_wbe[who];
             bs <= B_SDR;
-          end else if (R3P && !(tgt == X_R3DH && cur_w) && (!r3_empty || r3_push)) begin
+          end else if (R3P && !(tgt == X_R3DH && cur_w) &&
+                       (((tgt == X_R3DH) || (tgt == X_R3D)) ? (!r3_empty || r3_push) : r3_own)) begin
             // R3P (R114): on the board every processor access to PCI leaves the MPC105 behind the writes it
             // has posted (MPC105 manual 8.1.2.2: two 16-byte processor-to-PCI write buffers, one PCI
             // interface), so any access here but a host-port write waits for the buffer to empty, as the
@@ -895,7 +912,7 @@ module m3_bus
             // r3_push is registered, so the buffer has its word an edge later: B_R3P waits that edge out
             if (!r3_full && !(r3_push && 3'(r3_wp[2:0] + 3'd1) == r3_rp[2:0])) begin
               if (cmd == MC_LINE_WR) m_wnext[who] <= 1'b1;
-              r3_push <= 1'b1;
+              r3_push <= 1'b1; r3_pm <= who;
               r3_pd   <= {addr[31:24], addr[21:2], (cmd == MC_LINE_WR) ? m_wdata[who] : wd};
               tr_v <= 1'b1; tr_master <= who; tr_we <= 1'b1; tr_addr <= addr; tr_be <= (cmd == MC_LINE_WR) ? 4'hF : be;
               tr_nw <= a_nt;
