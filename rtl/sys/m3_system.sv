@@ -1307,6 +1307,7 @@ module m3_system
         // row 6 instructions, fetch waiting on memory, data memory wait, decode starved (all a second); row 7 FBUSY
         // rows 3-4 (diag2): the Real3D DMA a second: busy, words read, snoop wait, grant wait;
         // read outstanding, write outstanding, CPU waiting during a move, moves
+        6'd8:  ov_v <= {n_draw, n_drop};   6'd9: ov_v <= {8'h88, n_submit};   // row 2: Real3D frames drawn / dropped, submitted
         6'd12: ov_v <= dq_c[0];  6'd13: ov_v <= dq_c[1];  6'd14: ov_v <= dq_c[2];  6'd15: ov_v <= dq_c[3];
         6'd16: ov_v <= dq_c[4];  6'd17: ov_v <= dq_c[5];  6'd18: ov_v <= dq_c[6];  6'd19: ov_v <= dq_c[7];
         6'd20: ov_v <= perf[7];  6'd21: ov_v <= perf[4];  6'd22: ov_v <= mq_dtlb;  6'd23: ov_v <= mq_utlb;
