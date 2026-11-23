@@ -95,6 +95,13 @@ module m3_system
   // FBDBG = 1 (macro M3_FBUSY_BUILD) keeps FBUSY and the overlay in a RELEASE build, for reading the CPU's frame
   // times on the board: the overlay shows rows 6 and 7 only (FBUSY and its DMA-wait split) (the PC, IRQs, frame, step; FBUSY's row), every other
   // debug block stays off (CPI_MON and its UART, the exception captures, the other rows' counters)
+`ifdef M3_CPUMIN
+  // CPUMIN = 1 (macro M3_CPUMIN, our fork's diagnostic, with M3_FBUSY_BUILD): CPI_MON's counters and the MMU
+  // events a second on overlay rows 5 and 6 of the frame-busy build (row 7 stays FBUSY)
+  parameter bit          CPUMIN   = 1'b1,
+`else
+  parameter bit          CPUMIN   = 1'b0,
+`endif
 `ifdef M3_FBUSY_BUILD
   parameter bit          FBDBG    = 1'b1,
 `else
@@ -471,7 +478,7 @@ module m3_system
   // the debug blocks as built (RELEASE turns them all off)
   localparam bit OV_ON  = OVERLAY && (!RELEASE || FBDBG);
   localparam bit OV_MIN = RELEASE && FBDBG;            // the frame-busy build: overlay rows 6 and 7 only
-  localparam bit MON_ON = CPI_MON && !RELEASE;
+  localparam bit MON_ON = CPI_MON && (!RELEASE || CPUMIN);
   localparam bit FB_ON  = FBUSY   && (!RELEASE || FBDBG);
   localparam bit XC_ON  = XCAP    && OV_ON && !RELEASE;
 
@@ -637,6 +644,20 @@ module m3_system
     if (!rst && BR_SEC && sec_tick != (sec_chk == SCW'(CLK_HZ - 1))) $fatal(1, "m3_system: sec_tick against the old prescaler");
   end
 `endif
+
+  // diagnostic (our fork): the CPU's MMU events a second (DTLB miss, data micro-TLB replay), latched on sec_tick
+  logic [5:0]  mm_q;
+  logic [31:0] mw_dtlb, mw_utlb, mq_dtlb, mq_utlb;
+  always_ff @(posedge clk) begin
+    mm_q <= cpu_ev_mmu;
+    if (rst) begin
+      mw_dtlb <= '0; mw_utlb <= '0; mq_dtlb <= '0; mq_utlb <= '0;
+    end else if (sec_tick) begin
+      mq_dtlb <= mw_dtlb; mq_utlb <= mw_utlb; mw_dtlb <= '0; mw_utlb <= '0;
+    end else begin
+      mw_dtlb <= mw_dtlb + 32'(mm_q[0]); mw_utlb <= mw_utlb + 32'(mm_q[4]);
+    end
+  end
 
   logic       tg_nw;                      // a write into the name table (the bus's tr_nw; R103, R179)
   m3_bus #(.AW(AW), .SDR_CROM(SDR_CROM), .SDR_FIXED(SDR_FIXED), .SDR_BACKUP(SDR_BACKUP), .SDR_RAM(SDR_RAM),
@@ -1249,7 +1270,15 @@ module m3_system
     always_ff @(posedge clk) begin
       // (the frame-busy build, R188: row 7 FBUSY's {min, max}, bands and, last, the longest frame's {DMA wait, the
       // rest}; row 6 {min, max} of the DMA wait and the DMA wait over the second; every other row 0)
-      if (OV_MIN) ov_v <= (ov_idx == 6'd28) ? fb_mm : (ov_idx == 6'd29) ? fb_lo : (ov_idx == 6'd30) ? fb_hi :
+      if (OV_MIN && CPUMIN) case (ov_idx)
+        // the CPU diagnostic (our fork): row 5 redirects, load-use bubbles, DTLB misses, data micro-TLB replays;
+        // row 6 instructions, fetch waiting on memory, data memory wait, decode starved (all a second); row 7 FBUSY
+        6'd20: ov_v <= perf[7];  6'd21: ov_v <= perf[4];  6'd22: ov_v <= mq_dtlb;  6'd23: ov_v <= mq_utlb;
+        6'd24: ov_v <= perf[1];  6'd25: ov_v <= perf[8];  6'd26: ov_v <= perf[6];  6'd27: ov_v <= perf[3];
+        6'd28: ov_v <= fb_mm;    6'd29: ov_v <= fb_lo;    6'd30: ov_v <= fb_hi;    6'd31: ov_v <= fb3_long;
+        default: ov_v <= 32'd0;
+      endcase
+      else if (OV_MIN) ov_v <= (ov_idx == 6'd28) ? fb_mm : (ov_idx == 6'd29) ? fb_lo : (ov_idx == 6'd30) ? fb_hi :
                           (ov_idx == 6'd31) ? fb3_long : (ov_idx == 6'd24) ? fb3_mm : (ov_idx == 6'd25) ? fb3_sum : 32'd0;
       else case (ov_idx)
         // row 0: CPU PC (at vblank), IRQ state/enable and CROM bank, frames, the 53C810 interrupts
