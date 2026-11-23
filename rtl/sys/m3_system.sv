@@ -659,6 +659,38 @@ module m3_system
     end
   end
 
+  // diagnostic (our fork): the Real3D DMA's time a second, from bus master 1 (the move engine): busy, words read,
+  // snoop wait, request waiting for its grant, read outstanding (granted to its last beat), write outstanding,
+  // the CPU's request waiting while the move runs, moves started. Inputs a clock late, latched on sec_tick
+  logic        dq_busy, dq_req, dq_ack, dq_rv, dq_wn, dq_snr, dq_sna, dq_creq, dq_cack;
+  logic [1:0]  dq_cmd;
+  logic        dr_out, dw_out, dq_busy1;
+  logic [2:0]  dr_n, dw_n;
+  logic [7:0][31:0] dw_c, dq_c;
+  always_ff @(posedge clk) begin
+    dq_busy <= scsi_busy; dq_req <= m_req[1]; dq_ack <= m_ack[1]; dq_rv <= m_rvalid[1]; dq_wn <= m_wnext[1];
+    dq_cmd <= m_cmd[1]; dq_snr <= sn_req; dq_sna <= sn_ack; dq_creq <= m_req[0]; dq_cack <= m_ack[0];
+    dq_busy1 <= dq_busy;
+    if (dq_req && dq_ack && (dq_cmd == MC_LINE_RD || dq_cmd == MC_RD)) begin dr_out <= 1'b1; dr_n <= (dq_cmd == MC_LINE_RD) ? 3'd7 : 3'd0; end
+    else if (dr_out && dq_rv) begin dr_n <= dr_n - 3'd1; if (dr_n == 3'd0) dr_out <= 1'b0; end
+    if (dq_req && dq_ack && dq_cmd == MC_LINE_WR) begin dw_out <= 1'b1; dw_n <= 3'd7; end
+    else if (dw_out && dq_wn) begin dw_n <= dw_n - 3'd1; if (dw_n == 3'd0) dw_out <= 1'b0; end
+    if (rst) begin
+      dw_c <= '0; dq_c <= '0; dr_out <= 1'b0; dw_out <= 1'b0;
+    end else if (sec_tick) begin
+      dq_c <= dw_c; dw_c <= '0;
+    end else begin
+      dw_c[0] <= dw_c[0] + 32'(dq_busy);
+      dw_c[1] <= dw_c[1] + 32'(dr_out && dq_rv);
+      dw_c[2] <= dw_c[2] + 32'(dq_snr && !dq_sna);
+      dw_c[3] <= dw_c[3] + 32'(dq_req && !dq_ack);
+      dw_c[4] <= dw_c[4] + 32'(dr_out);
+      dw_c[5] <= dw_c[5] + 32'(dw_out || (dq_req && dq_cmd == MC_WR));
+      dw_c[6] <= dw_c[6] + 32'(dq_busy && dq_creq && !dq_cack);
+      dw_c[7] <= dw_c[7] + 32'(dq_busy && !dq_busy1);
+    end
+  end
+
   logic       tg_nw;                      // a write into the name table (the bus's tr_nw; R103, R179)
   m3_bus #(.AW(AW), .SDR_CROM(SDR_CROM), .SDR_FIXED(SDR_FIXED), .SDR_BACKUP(SDR_BACKUP), .SDR_RAM(SDR_RAM),
            .SDR_VRAM(SDR_VRAM), .CROM_BANKS(CROM_BANKS), .MIDI_GAP(MIDI_GAP_C), .FAST(BUS_FAST), .R3P(BUS_R3P), .TGT(TG_TIMING), .TG_MHZ(CLK_MHZ),
@@ -1273,6 +1305,10 @@ module m3_system
       if (OV_MIN && CPUMIN) case (ov_idx)
         // the CPU diagnostic (our fork): row 5 redirects, load-use bubbles, DTLB misses, data micro-TLB replays;
         // row 6 instructions, fetch waiting on memory, data memory wait, decode starved (all a second); row 7 FBUSY
+        // rows 3-4 (diag2): the Real3D DMA a second: busy, words read, snoop wait, grant wait;
+        // read outstanding, write outstanding, CPU waiting during a move, moves
+        6'd12: ov_v <= dq_c[0];  6'd13: ov_v <= dq_c[1];  6'd14: ov_v <= dq_c[2];  6'd15: ov_v <= dq_c[3];
+        6'd16: ov_v <= dq_c[4];  6'd17: ov_v <= dq_c[5];  6'd18: ov_v <= dq_c[6];  6'd19: ov_v <= dq_c[7];
         6'd20: ov_v <= perf[7];  6'd21: ov_v <= perf[4];  6'd22: ov_v <= mq_dtlb;  6'd23: ov_v <= mq_utlb;
         6'd24: ov_v <= perf[1];  6'd25: ov_v <= perf[8];  6'd26: ov_v <= perf[6];  6'd27: ov_v <= perf[3];
         6'd28: ov_v <= fb_mm;    6'd29: ov_v <= fb_lo;    6'd30: ov_v <= fb_hi;    6'd31: ov_v <= fb3_long;
