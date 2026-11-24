@@ -360,6 +360,7 @@ set_global_assignment -name VERILOG_MACRO "M3_DMAFAST=1"
 set_global_assignment -name VERILOG_MACRO "M3_R3B=1"
 # our fork: polygon RAM (98) writes gathered into four-beat DDR3 bursts (r3d_mem)
 set_global_assignment -name VERILOG_MACRO "M3_R3PB=1"
+set_global_assignment -name VERILOG_MACRO "M3_R3LATE=1"
 # Release builds: every debug block off together (m3_system RELEASE: the overlay and its capture, CPI_MON, FBUSY;
 # about 2,400 ALM at 100 MHz, study R105). Test builds leave this commented out.
 set_global_assignment -name VERILOG_MACRO "M3_RELEASE=1"
