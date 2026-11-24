@@ -204,6 +204,7 @@ int main(int argc, char **argv) {
   // checks
   uint64_t st_reads = 0, st_bad = 0, fails = 0, n_mchk = 0, n_tchk = 0, n_cchk = 0, n_gchk = 0;
   uint32_t cur_frame = 0, swap_frame = 0;
+  uint32_t flip_frame = 0;          // (our fork) the frame of the last flip: a swap held past the next frame's start is that frame's
   bool chk_tex_pend = false; uint32_t tex_frame = 0;
   std::set<uint32_t> drawn;
   uint64_t frame_start_cyc = 0;
@@ -314,9 +315,10 @@ int main(int argc, char **argv) {
     // checks at the swap and the frame's end
     if (m_swap) {
       if (std::getenv("SB_SWAPS")) std::printf("swap at f%u cycle %llu\n", cur_frame, (unsigned long long)cyc);
-      swap_frame = cur_frame;
-      drawn.insert(cur_frame);
-      if (list.count(cur_frame)) {
+      swap_frame = flip_frame;
+      drawn.insert(flip_frame);
+      if (list.count(flip_frame)) {
+        uint32_t const cur_frame = flip_frame;
         std::vector<uint8_t> d = read_file(dump_dir + "/r3d_" + [&] { char b[16]; std::snprintf(b, 16, "%06u", cur_frame); return std::string(b); }() + ".bin");
         if (d.size() != 0x1100000) { std::printf("f%u: no dump\n", cur_frame); fails++; }
         else {
@@ -369,7 +371,9 @@ int main(int argc, char **argv) {
   // states 1-3). Not the full drain, which waits for the geometry and the
   // copies: that would keep a listed frame's geometry from ever overlapping
   // the next frame's writes, and hide the deferral.
-  auto drain8c = [&]() { uint64_t n = 0; while ((!t->h_rdy || (t->rootp->r3d_host_tb__DOT__u_mem__DOT__st >= 1 && t->rootp->r3d_host_tb__DOT__u_mem__DOT__st <= 3)) && n < 20000000) { step(); n++; } };
+  // (our fork) with M3_DMAFAST h_rdy is high while r3d_cmd's posted FIFO still holds words: wait for it to empty too
+  auto drain8c = [&]() { uint64_t n = 0; while ((!t->h_rdy || t->rootp->r3d_host_tb__DOT__u_cmd__DOT__pf_n ||
+                                                  (t->rootp->r3d_host_tb__DOT__u_mem__DOT__st >= 1 && t->rootp->r3d_host_tb__DOT__u_mem__DOT__st <= 3)) && n < 20000000) { step(); n++; } };
 
   for (size_t i = 0; i < nrec; i++) {
     rec const &r = R[i];
@@ -407,6 +411,7 @@ int main(int argc, char **argv) {
         }
         if (!quiet && cur_frame % 100 == 0) std::printf("frame %u, cycle %" PRIu64 ", drawn %u, dropped %u\n", cur_frame, cyc, unsigned(t->n_draw), unsigned(t->n_drop));
       } else if (r.size == 2) {
+        flip_frame = cur_frame;
         t->ln_start = 1; t->ln = uint16_t(r.addr); step(); t->ln_start = 0;
       }
       continue;

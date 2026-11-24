@@ -103,12 +103,27 @@ module r3d_host_tb #(
   logic [1:0][15:0] p_din;
   logic [1:0][1:0]  p_be;
   logic [1:0][63:0] p_dout;
+`ifdef M3_R3B
+  // (our fork) the board's form (study R144): r3d_mem's port writes in bursts
+  logic [3:0]  wb_col;
+  logic [15:0] r3_wbd;
+  logic [1:0]  r3_wbb;
+  logic        s0_long;
+  m2_sdram #(.COL_BITS(COL_BITS), .NP(2), .T_REFI(770), .ACK_HOLD(1), .DUAL(1'b1), .MASK_ON_A(1'b1), .BXOR(BXOR), .WB(2'b01)) u_sdram (
+    .clk, .rst_n(mem_rst_n), .ready(sd_ready), .rd_lat_sel,
+    .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_a, .sd_dqm, .sd_dq_o, .sd_dq_oe, .sd_dq_i,
+    .wr_req(1'b0), .wr_addr('0), .wr_din('0), .wr_be('0), .wr_ack(),
+    .p_req, .p_we, .p_addr, .p_din, .p_be, .p_dout, .p_ack, .p_long({1'b0, s0_long}), .p_lo,
+    .wb_col, .wb_din(r3_wbd), .wb_be(r3_wbb), .wb_grant(),
+    .dbg_req(), .dbg_grant());
+`else
   m2_sdram #(.COL_BITS(COL_BITS), .NP(2), .T_REFI(770), .ACK_HOLD(1), .DUAL(1'b1), .MASK_ON_A(1'b1), .BXOR(BXOR)) u_sdram (
     .clk, .rst_n(mem_rst_n), .ready(sd_ready), .rd_lat_sel,
     .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_a, .sd_dqm, .sd_dq_o, .sd_dq_oe, .sd_dq_i,
     .wr_req(1'b0), .wr_addr('0), .wr_din('0), .wr_be('0), .wr_ack(),
     .p_req, .p_we, .p_addr, .p_din, .p_be, .p_dout, .p_ack, .p_long(2'b00), .p_lo,
     .dbg_req(), .dbg_grant());
+`endif
 
   // DDR3
   logic [2:0]       d_req, d_we, d_wacc, d_rvalid, d_ack;
@@ -148,6 +163,9 @@ module r3d_host_tb #(
     .s_req(s0_req), .s_we(s0_we), .s_addr(s0_addr), .s_din(s0_din), .s_be(s0_be), .s_ack(p_ack[0]), .s_dout(p_dout[0]),
     .d_req(d_req[1]), .d_we(d_we[1]), .d_addr(d_addr[1]), .d_blen(d_blen[1]), .d_din(d_din[1]), .d_be(d_be[1]),
     .d_wacc(d_wacc[1]), .d_rvalid(d_rvalid[1]), .d_ack(d_ack[1]), .d_dout(dm_dout),
+`ifdef M3_R3B
+    .s_long(s0_long), .s_wbc(wb_col), .s_wbd(r3_wbd), .s_wbb(r3_wbb),
+`endif
     .n_runs(), .n_copy());
   assign p_req[0] = s0_req; assign p_we[0] = s0_we; assign p_addr[0] = s0_addr; assign p_din[0] = s0_din; assign p_be[0] = s0_be;
 
