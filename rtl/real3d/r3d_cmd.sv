@@ -124,7 +124,11 @@ module r3d_cmd #(
   output logic          pingpong,
   output logic          flip,
   output logic [15:0]   n_draw,         // frames drawn (begun)
-  output logic [15:0]   n_drop          // frames submitted but dropped
+  output logic [15:0]   n_drop,         // frames submitted but dropped
+  // diagnostic (bonna79): why a frame was dropped, counted at the flip, first true reason wins
+  output logic [15:0]   n_drop_g,       // the geometry still running the last frame (g_run)
+  output logic [7:0]    n_drop_e,       // the last frame's end still waiting (uploads, or every buffer in use)
+  output logic [7:0]    n_drop_f        // the rasteriser has no free store bank (!f_ready)
 );
 
   // ===========================================================================
@@ -252,7 +256,7 @@ module r3d_cmd #(
       pingpong <= 1'b0; cmd_seen <= 1'b0; tg_seen <= 1'b0;
       g_run <= 1'b0; g_seen <= 1'b0; m_rbusy <= 1'b0; sw_wait <= 1'b0; x_need <= 1'b0; x_run <= 1'b0; e_wait <= 1'b0;
       inf_n <= '0; pend_v <= 1'b0; show_v <= 1'b0; show_buf <= 2'd0; hide <= '0;
-      n_draw <= '0; n_drop <= '0; tot <= '0; tot_l <= 23'h7F_FFFF; t3 <= '0;
+      n_draw <= '0; n_drop <= '0; n_drop_g <= '0; n_drop_e <= '0; n_drop_f <= '0; tot <= '0; tot_l <= 23'h7F_FFFF; t3 <= '0;
     end else begin
       // ---- the host
       if (h_go && h_rdy) begin
@@ -285,7 +289,12 @@ module r3d_cmd #(
         cmd_seen <= 1'b0; tg_seen <= 1'b0;
         if (cmd_seen && tg_seen) begin
           if (can_start) sw_wait <= 1'b1;
-          else n_drop <= n_drop + 16'd1;
+          else begin
+            n_drop <= n_drop + 16'd1;
+            if (g_run) n_drop_g <= n_drop_g + 16'd1;
+            else if (e_wait) n_drop_e <= n_drop_e + 8'd1;
+            else n_drop_f <= n_drop_f + 8'd1;
+          end
         end
       end
       // the swap: once the write held at the flip has gone in and r3d_mem's

@@ -885,6 +885,18 @@ module m3_system
   logic        t3_valid, t3_ready, t3_vrom, t3_flush, t3_pend, t3_mark, t3_mpend, t3_go, t3_busy;
   logic [31:0] t3_data;
   logic        g_start, g_busy, f_ready, f_begin, r_busy, show_3d;
+  logic [15:0] n_drop_g;
+  logic [7:0]  n_drop_e, n_drop_f;   // diagnostic (our fork): why frames are dropped (r3d_cmd)
+  // diagnostic (our fork): the Real3D's time a second: the geometry busy (g_busy), the rasteriser replaying (r_busy);
+  // inputs a clock late, latched on sec_tick
+  logic        gq_g, gq_r;
+  logic [1:0][31:0] gw_c, gq_c;
+  always_ff @(posedge clk) begin
+    gq_g <= g_busy; gq_r <= r_busy;
+    if (rst) begin gw_c <= '0; gq_c <= '0; end
+    else if (sec_tick) begin gq_c <= gw_c; gw_c <= '0; end
+    else begin gw_c[0] <= gw_c[0] + 32'(gq_g); gw_c[1] <= gw_c[1] + 32'(gq_r); end
+  end
   logic        f_end /* verilator public_flat_rd */, r_done /* verilator public_flat_rd */;
   logic [1:0]  f_buf /* verilator public_flat_rd */, show_buf;
   logic [15:0] n_draw, n_drop, n_runs, n_copy, n_tex_up, n_tex_skip;
@@ -896,7 +908,7 @@ module m3_system
     .t_valid(t3_valid), .t_ready(t3_ready), .t_vrom(t3_vrom), .t_data(t3_data), .t_flush(t3_flush), .t_pend(t3_pend),
     .t_mark(t3_mark), .t_mpend(t3_mpend), .t_go(t3_go), .t_busy(t3_busy),
     .g_start, .g_busy, .f_ready, .f_begin, .f_end, .f_buf, .r_done, .r_busy,
-    .show_buf, .show_3d, .pingpong(r3_pingpong), .flip(r3_flip), .n_draw, .n_drop);
+    .show_buf, .show_3d, .pingpong(r3_pingpong), .flip(r3_flip), .n_draw, .n_drop, .n_drop_g, .n_drop_e, .n_drop_f);
 
   // ---- culling and polygon RAM windows
   r3d_mem #(.AW(AW), .SDR_8C(SDR_8C), .SDR_8E0(SDR_8E0), .SDR_8E1(SDR_8E1), .DDR_P0(D_POLY0), .DDR_P1(D_POLY1)) u_r3mem (
@@ -1307,7 +1319,10 @@ module m3_system
         // row 6 instructions, fetch waiting on memory, data memory wait, decode starved (all a second); row 7 FBUSY
         // rows 3-4 (diag2): the Real3D DMA a second: busy, words read, snoop wait, grant wait;
         // read outstanding, write outstanding, CPU waiting during a move, moves
-        6'd8:  ov_v <= {n_draw, n_drop};   6'd9: ov_v <= {8'h88, n_submit};   // row 2: Real3D frames drawn / dropped, submitted
+        // row 2 (diag3): Real3D frames drawn / dropped; drops by reason {geometry running, frame end waiting, no
+        // store bank}; geometry busy and rasteriser busy, clocks a second
+        6'd8:  ov_v <= {n_draw, n_drop};  6'd9: ov_v <= {n_drop_g, n_drop_e, n_drop_f};
+        6'd10: ov_v <= gq_c[0];           6'd11: ov_v <= gq_c[1];
         6'd12: ov_v <= dq_c[0];  6'd13: ov_v <= dq_c[1];  6'd14: ov_v <= dq_c[2];  6'd15: ov_v <= dq_c[3];
         6'd16: ov_v <= dq_c[4];  6'd17: ov_v <= dq_c[5];  6'd18: ov_v <= dq_c[6];  6'd19: ov_v <= dq_c[7];
         6'd20: ov_v <= perf[7];  6'd21: ov_v <= perf[4];  6'd22: ov_v <= mq_dtlb;  6'd23: ov_v <= mq_utlb;
