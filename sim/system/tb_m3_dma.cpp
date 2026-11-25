@@ -50,6 +50,8 @@ enum { K_MEM, K_REG, K_BUSY, K_ST, K_88 };
 
 static std::deque<std::pair<uint32_t, uint32_t>> h_exp;   // host-port writes owed, in order
 static long h_n = 0, h_bad = 0;
+struct Mv { uint32_t src, dst, len; };
+static std::vector<Mv> mvf;
 static uint32_t h_form(uint32_t a) { return (a & 0xFF000000u) | (a & 0x003FFFFCu); }
 
 int main(int argc, char **argv) {
@@ -69,6 +71,11 @@ int main(int argc, char **argv) {
     else if (a == "--cpu") cpu_pct = nx();
     else if (a == "--lens") { lens.clear(); std::string l = argv[++i]; for (char *p = std::strtok(l.data(), ","); p; p = std::strtok(nullptr, ",")) lens.push_back(std::atoi(p)); }
     else if (a == "--quiet") quiet = true;
+    else if (a == "--mvfile") {   // Supermodel's move log (frame pc src dst len a line): the moves in order, the source mapped into the bench's region
+      FILE *f = std::fopen(argv[++i], "r"); unsigned fr, pc, sa, da, ln;
+      while (f && std::fscanf(f, "%u %x %x %x %u", &fr, &pc, &sa, &da, &ln) == 5) mvf.push_back({sa, da, ln});
+      if (f) std::fclose(f);
+    }
   }
   rng.seed(seed); mv_rng.seed(seed * 7919u + 1u);
   sd.bxor = true;
@@ -130,13 +137,19 @@ int main(int argc, char **argv) {
         // now and then the CPU's own Real3D accesses between moves: a command port write, a status read
         if (mv_rng() % 4 == 0) { Txn x; x.cmd = 3; x.addr = 0x88000000u; x.be = 15; x.wd[0] = mv_rng(); x.kind = K_88; x.check = false; ctl.push_back(x); }
         if (mv_rng() % 4 == 0) { Txn x; x.cmd = 2; x.addr = 0x84000000u; x.be = 15; x.kind = K_ST; x.check = false; ctl.push_back(x); }
-        int const len = lens[mv_rng() % lens.size()];
+        size_t const mi = size_t(mv_done) % (mvf.empty() ? 1 : mvf.size());
+        int const len = mvf.empty() ? lens[mv_rng() % lens.size()] : int(mvf[mi].len);
         bool const swp = mv_rng() & 1;
         uint32_t const src = 0x400000u + ((mv_rng() % (0x80000u / 4 - uint32_t(len))) << 2);
         uint32_t const win = (mv_rng() % 4 == 0) ? 0x8C000000u : (mv_rng() % 3 == 0) ? 0x8E000000u : 0x98000000u;
         uint32_t const dst = win + ((mv_rng() % (0x100000u / 4 - uint32_t(len))) << 2);
         // the line alignment as the game has it, mostly: aligned source and destination
-        uint32_t const s2 = (mv_rng() % 4) ? (src & ~31u) : src, d2 = (mv_rng() % 4) ? (dst & ~31u) : dst;
+        uint32_t s2 = (mv_rng() % 4) ? (src & ~31u) : src, d2 = (mv_rng() % 4) ? (dst & ~31u) : dst;
+        if (!mvf.empty()) {   // the logged destination; the source at its offset in the region, wrapped to fit
+          d2 = mvf[mi].dst;
+          uint32_t const off = ((mvf[mi].src & 0x7FFE0u) % (0x80000u - 4u * uint32_t(len) - 32u)) & ~31u;
+          s2 = 0x400000u + off + (mvf[mi].src & 0x1Cu);
+        }
         reg_w(0x00, bswap(s2), 15); reg_w(0x04, bswap(d2), 15); reg_w(0x0C, swp ? 0x8100u : 0x0100u, 0x2);
         reg_w(0x08, bswap(uint32_t(len)), 15);
         mv_words.clear();
