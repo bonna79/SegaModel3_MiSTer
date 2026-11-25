@@ -686,6 +686,12 @@ module m3_system
   logic        dr_out, dw_out, dq_busy1;
   logic [2:0]  dr_n, dw_n;
   logic [7:0][31:0] dw_c, dq_c;
+  // M3_NO_DMACNT (our fork): overlay rows 3-4 read 0, so the DMA counters are not built (room in the game cores)
+`ifdef M3_NO_DMACNT
+  localparam bit DMACNT = 1'b0;
+`else
+  localparam bit DMACNT = 1'b1;
+`endif
   always_ff @(posedge clk) begin
     dq_busy <= scsi_busy; dq_req <= m_req[1]; dq_ack <= m_ack[1]; dq_rv <= m_rvalid[1]; dq_wn <= m_wnext[1];
     dq_dhw <= dh_v && !dh_take;   // DMA_DIR: a word of the move waiting for the Real3D's host port
@@ -1345,8 +1351,10 @@ module m3_system
         // store bank}; geometry busy and rasteriser busy, clocks a second
         6'd8:  ov_v <= {n_draw, n_drop};  6'd9: ov_v <= {n_drop_g, n_drop_e, n_drop_f};
         6'd10: ov_v <= gq_c[0];           6'd11: ov_v <= gq_c[1];
-        6'd12: ov_v <= dq_c[0];  6'd13: ov_v <= dq_c[1];  6'd14: ov_v <= dq_c[2];  6'd15: ov_v <= dq_c[3];
-        6'd16: ov_v <= dq_c[4];  6'd17: ov_v <= dq_c[5];  6'd18: ov_v <= dq_c[6];  6'd19: ov_v <= dq_c[7];
+        6'd12: ov_v <= DMACNT ? dq_c[0] : '0;  6'd13: ov_v <= DMACNT ? dq_c[1] : '0;
+        6'd14: ov_v <= DMACNT ? dq_c[2] : '0;  6'd15: ov_v <= DMACNT ? dq_c[3] : '0;
+        6'd16: ov_v <= DMACNT ? dq_c[4] : '0;  6'd17: ov_v <= DMACNT ? dq_c[5] : '0;
+        6'd18: ov_v <= DMACNT ? dq_c[6] : '0;  6'd19: ov_v <= DMACNT ? dq_c[7] : '0;
         6'd20: ov_v <= perf[7];  6'd21: ov_v <= perf[4];  6'd22: ov_v <= mq_dtlb;  6'd23: ov_v <= mq_utlb;
         6'd24: ov_v <= perf[1];  6'd25: ov_v <= perf[8];  6'd26: ov_v <= perf[6];  6'd27: ov_v <= perf[3];
         6'd28: ov_v <= fb_mm;    6'd29: ov_v <= fb_lo;    6'd30: ov_v <= fb_hi;    6'd31: ov_v <= fb3_long;
