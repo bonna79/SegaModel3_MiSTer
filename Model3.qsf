@@ -372,3 +372,13 @@ set_global_assignment -name VERILOG_MACRO "M3_R3B=1"
 # phase): Quartus would otherwise merge outclk_3 into outclk_2, and Model3.sdc's sd2_pin and the second SDRAM's I/O
 # constraints would then match nothing (c135y_s1, 2026-11-20). As sys/pll_hdmi does for its PLL.
 set_instance_assignment -name UNFORCE_MERGE_PLL_OUTPUT_COUNTER ON -to "*pll_0002*|altera_pll:altera_pll_i*|*"
+set_global_assignment -name VERILOG_MACRO "M3_BXC=1"
+set_global_assignment -name VERILOG_MACRO "M3_SND_WD15=1"
+set_global_assignment -name VERILOG_MACRO "M3_SND_D384=1"
+set_global_assignment -name VERILOG_MACRO "M3_DT4=1"
+set_global_assignment -name VERILOG_MACRO "M3_DUN8=1"
+set_global_assignment -name VERILOG_MACRO "M3_IPF=1"
+set_global_assignment -name VERILOG_MACRO "M3_DMADIR=1"
+set_global_assignment -name VERILOG_MACRO "M3_R3LATE=1"
+set_global_assignment -name VERILOG_MACRO "M3_R3EMPTY=1"
+set_global_assignment -name VERILOG_MACRO "M3_NO_VGA=1"
