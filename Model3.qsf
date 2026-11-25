@@ -363,6 +363,7 @@ set_global_assignment -name VERILOG_MACRO "M3_R3PB=1"
 # our fork: a Real3D DMA move writes the Real3D straight from the move engine, not over the bus (m3_scripts DIR, m3_bus DDIR)
 set_global_assignment -name VERILOG_MACRO "M3_DMADIR=1"
 set_global_assignment -name VERILOG_MACRO "M3_R3LATE=1"
+set_global_assignment -name VERILOG_MACRO "M3_R3EMPTY=1"
 # Release builds: every debug block off together (m3_system RELEASE: the overlay and its capture, CPI_MON, FBUSY;
 # about 2,400 ALM at 100 MHz, study R105). Test builds leave this commented out.
 set_global_assignment -name VERILOG_MACRO "M3_RELEASE=1"
