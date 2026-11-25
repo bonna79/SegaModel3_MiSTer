@@ -489,7 +489,13 @@ module m3_system
   // the debug blocks as built (RELEASE turns them all off)
   localparam bit OV_ON  = OVERLAY && (!RELEASE || FBDBG);
   localparam bit OV_MIN = RELEASE && FBDBG;            // the frame-busy build: overlay rows 6 and 7 only
+  // M3_NO_CPUMON (our fork): with M3_CPUMIN, keep the Real3D/DMA rows 2-4 and the MMU counts but not m3_cpu_mon
+  // (its counters, UART and CPI divider): room in the 135/140 MHz game cores, rows 5-6 perf read 0
+`ifdef M3_NO_CPUMON
+  localparam bit MON_ON = CPI_MON && !RELEASE;
+`else
   localparam bit MON_ON = CPI_MON && (!RELEASE || CPUMIN);
+`endif
   localparam bit FB_ON  = FBUSY   && (!RELEASE || FBDBG);
   localparam bit XC_ON  = XCAP    && OV_ON && !RELEASE;
 
