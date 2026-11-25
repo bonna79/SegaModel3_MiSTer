@@ -4697,8 +4697,11 @@ module ppc_core
   wire        m_rpe   = m.rp && !(m_rpx && sl_done && !sl_bad);
   assign      d_xgo   = RPX && m.valid && m.rp && m_rpx && sl_done && !sl_bad && !m_xs;
   assign      d_xcan  = RPX && m.valid && m.rp && m_rpx && sl_done && sl_bad && !m_xs;
-  assign      d_xpa   = sl_h0_q ? sl_pa0_q : sl_pa1_q;
-  assign      d_xwimg = sl_h0_q ? sl_wimg0_q : sl_wimg1_q;
+  // (DT4: the hit's way of four, as the micro-TLB's fill takes it)
+  assign      d_xpa   = !DT4 ? (sl_h0_q ? sl_pa0_q : sl_pa1_q) :
+                        sl_hw_q == 2'd0 ? sl_pa0_q : sl_hw_q == 2'd1 ? sl_pa1_q : sl_hw_q == 2'd2 ? sl_pa2_q : sl_pa3_q;
+  assign      d_xwimg = !DT4 ? (sl_h0_q ? sl_wimg0_q : sl_wimg1_q) :
+                        sl_hw_q == 2'd0 ? sl_wimg0_q : sl_hw_q == 2'd1 ? sl_wimg1_q : sl_hw_q == 2'd2 ? sl_wimg2_q : sl_wimg3_q;
   always_ff @(posedge clk)
     if (rst || mem_adv) m_xs <= 1'b0;
     else if (d_xgo || d_xcan) m_xs <= 1'b1;
