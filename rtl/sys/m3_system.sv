@@ -102,17 +102,31 @@ module m3_system
 `endif
   // XCAP = 0 (macro M3_NO_XCAP) leaves the overlay's exception rows 8-11 at zero, so their capture logic
   // is not built: a smaller test build (study R105)
-  // DMA_DIR = 1 (macro M3_DMADIR, our fork): a Step 2 move into the Real3D's host port writes it straight from
+`ifdef M3_NO_XCAP
+  parameter bit          XCAP     = 1'b0,
+`else
+  parameter bit          XCAP     = 1'b1,
+`endif
+  // ---- bonna79's options (all off by default; docs/bonna79-game-cores.md has what each did on the board)
+  // DMA_DIR = 1 (macro M3_DMADIR): a Step 2 move into the Real3D's host port writes it straight from
   // m3_scripts' FIFO (m3_scripts DIR, m3_bus DDIR), not as line writes over the bus
 `ifdef M3_DMADIR
   parameter bit          DMA_DIR  = 1'b1,
 `else
   parameter bit          DMA_DIR  = 1'b0,
 `endif
-`ifdef M3_NO_XCAP
-  parameter bit          XCAP     = 1'b0,
+  // SND_WD15 (macro M3_SND_WD15): the sound bridge's watchdog at 2^15 samples (743 ms, WD_BITS 15) instead of
+  // 2^12 (93 ms): a late ARM server no longer makes the bridge reset and the sound board reboot (the music lost)
+`ifdef M3_SND_WD15
+  parameter bit          SND_WD15 = 1'b1,
 `else
-  parameter bit          XCAP     = 1'b1,
+  parameter bit          SND_WD15 = 1'b0,
+`endif
+  // SND_D384 (macro M3_SND_D384): the sound bridge's play delay 384 samples (8.7 ms) instead of 256 (5.8 ms)
+`ifdef M3_SND_D384
+  parameter bit          SND_D384 = 1'b1,
+`else
+  parameter bit          SND_D384 = 1'b0,
 `endif
   parameter int          CLK_HZ   = 100_000_000,
   // D-41: the 603e revision the game reads (Step 1.0: rev 1.3, as MAME). VF3's
@@ -155,7 +169,11 @@ module m3_system
   parameter logic [5:0]  SDR_AGE     = 6'b000000,
   parameter int          SDR_AGE_T   = 48,
   parameter bit          SDR_BXOR    = 1'b0,
+`ifdef M3_BXC
+  parameter bit          SDR_BXC     = 1'b1,
+`else
   parameter bit          SDR_BXC     = 1'b0,
+`endif
   parameter bit          SDR_L16     = 1'b0,
   parameter bit          SDR_LW1     = 1'b0,
   parameter bit          SDR_PAIR    = 1'b0,
@@ -166,13 +184,27 @@ module m3_system
   parameter bit          CPU_WV      = 1'b1,
   // CPU_RPE      a data micro-TLB miss refetched as its translation starts, not after it (ppc_core RPE, D-60)
   parameter bit          CPU_RPE     = 1'b1,
-  // CPU_DT4      a 4-way, 128-entry data TLB (ppc_core DT4; Daytona 2's DTLB reloads -88% in our Supermodel study)
+  // CPU_DT4      a 4-way, 128-entry data TLB (ppc_core DT4; Daytona 2's DTLB reloads -88% in our Supermodel study;
+  //              macro M3_DT4)
+`ifdef M3_DT4
   parameter bit          CPU_DT4     = 1'b1,
-  // CPU_DUN      the data micro-TLB's entries (ppc_core DUN, 2/4/6/8)
+`else
+  parameter bit          CPU_DT4     = 1'b0,
+`endif
+  // CPU_DUN      the data micro-TLB's entries (ppc_core DUN, 2/4/6/8; macro M3_DUN8: 8)
+`ifdef M3_DUN8
   parameter int          CPU_DUN     = 8,
+`else
+  parameter int          CPU_DUN     = 4,
+`endif
   // CPU_IPF      I-cache next-line prefetch (ppc_icache IPF): while a line streams and the next line of the
-  //              same page misses, that line is filled in the background (study 2026-11-22, Daytona -77%)
+  //              same page misses, that line is filled in the background (study 2026-11-22, Daytona -77%;
+  //              macro M3_IPF)
+`ifdef M3_IPF
   parameter bit          CPU_IPF     = 1'b1,
+`else
+  parameter bit          CPU_IPF     = 1'b0,
+`endif
   parameter bit          SDR_RA_CONF = 1'b0,            // SDR_RA: arm only on a stream seen (m3_sdr_port RA_CONF)
   // ---- the CPU's miss path, clocks taken out (study R112; all 0: as it was)
   //   BUS_FAST     m3_bus: the CPU's work-RAM reads go to the port from B_IDLE (m3_bus FAST)
@@ -809,13 +841,13 @@ module m3_system
   logic       snd_we, snd_data;
   logic [7:0] snd_byte;
   generate if (SND_DSP) begin : g_snd
-    // WD_BITS 15 (743 ms, was 12, 93 ms): an ARM that falls more than D + SLIP samples behind and needs over
+    // (SND_WD15, SND_D384) WD_BITS 15 (743 ms, was 12, 93 ms): an ARM that falls more than D + SLIP samples behind and needs over
     // 93 ms to catch up made the bridge reset itself, and the server's new session reboots the sound board, so
     // the music the game started never came back. A server restart takes seconds, still well past 743 ms.
     // D 384 (was 256, 5.8 ms; now 8.7 ms): the server on the ARM runs at 85-96% in a race and falls up to ~670
     // samples behind; each sample it is behind past D is a record the bridge skips (a small audible gap). 384 is
     // the most the 512-slot record ring takes with SLIP's 128 samples of the bridge running late on top.
-    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(384), .BLOCK(25'h1E4_0000), .WD_BITS(15)) u_snd (
+    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(SND_D384 ? 384 : 256), .BLOCK(25'h1E4_0000), .WD_BITS(SND_WD15 ? 15 : 12)) u_snd (
       .clk, .rst(rst_snd), .midi_we(snd_we), .midi_data(snd_data), .midi_byte(snd_byte), .vol(snd_vol),
       .d_req(d_req[7]), .d_we(d_we[7]), .d_addr(d_addr[7]), .d_blen(d_blen[7]), .d_din(d_din[7]), .d_be(d_be[7]),
       .d_wacc(d_wacc[7]), .d_rvalid(d_rvalid[7]), .d_ack(d_ack[7]), .d_dout(dm_dout),

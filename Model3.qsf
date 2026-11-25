@@ -72,7 +72,8 @@ set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_YC=1"
 
 # Disable ALSA audio output to save some resources
 set_global_assignment -name VERILOG_MACRO "MISTER_DISABLE_ALSA=1"
-set_global_assignment -name VERILOG_MACRO "M3_NO_VGA=1"
+# M3_NO_VGA (bonna79): no analog VGA path (sys_top), for room in test builds; HDMI only
+#set_global_assignment -name VERILOG_MACRO "M3_NO_VGA=1"
 
 # D-62: the framework's audio IIR filter switched off for the FPGA sound board's room.
 # sys/audio_out.sv carries Model 2's docs/framework-patches/audio-filter-disable.patch;
