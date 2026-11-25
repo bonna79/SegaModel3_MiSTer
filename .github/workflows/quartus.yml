@@ -53,6 +53,15 @@ jobs:
           # worst slack per clock and corner, readable from the job log
           grep -B1 -A2 "^Type" output_files/Model3.sta.summary | grep -E "Type|Slack" | paste - - | grep -E "Setup|Hold|Recovery" || true
 
+      - name: Failing paths (system clock)
+        if: always()
+        run: |
+          if [ -f ci/fail_paths.tcl ]; then
+            docker run --rm -v "$PWD:/project" -w /project --user "$(id -u):$(id -g)" "$IMAGE" \
+              quartus_sta -t ci/fail_paths.tcl > fail_sta.log 2>&1 || tail -20 fail_sta.log
+            python3 ci/fail_sum.py || true
+          fi
+
       - name: Sound bridge timing
         if: always()
         run: |
