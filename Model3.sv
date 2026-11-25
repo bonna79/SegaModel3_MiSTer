@@ -238,7 +238,8 @@ pll pll
 // (R187: the second SDRAM's read setup wants its clock earlier than the first's
 // fast-corner read hold allows).
 // D-69 as decided on 2026-11-14: 125 MHz everywhere, c125's clock (outclk_1 125 MHz).
-localparam int SYS_HZ = 130_000_000;
+// our fork: 135 MHz test build (outclk_1-3 at 135 MHz; SDRAM clocks keep their 130 MHz leads in time)
+localparam int SYS_HZ = 135_000_000;
 
 // memory: out of reset on PLL lock, and stays out (study rules)
 reg [2:0] mem_rst_s = 3'b000;
