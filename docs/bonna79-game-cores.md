@@ -116,10 +116,10 @@ Daytona 2 or at 140 in Sega Rally 2 so far, but it is one board.
 | Build | Race mean fps |
 |---|---|
 | your main of 2026-11-19 + BXC | fixed 29 in the race |
-| + DT4, DUN 8 | 32.9 |
+| + our one-cycle stfs, DT4, DUN 8 | 32.9 |
 | + IPF | 32.6 (fewer dips, laps 2% faster) |
 | + R3PB | 39.9 |
-| + DMADIR, at 135 MHz | **55.0** (76% of race seconds at 56-58) |
+| + DMADIR and 135 MHz (together) | **55.0** (76% of race seconds at 56-58) |
 
 What is left at 135 MHz:
 - Once a lap, at the same place, it drops to 42-48: all drops "geometry still running" → the late
