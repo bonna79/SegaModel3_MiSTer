@@ -370,6 +370,7 @@ set_global_assignment -name VERILOG_MACRO "M3_RELEASE=1"
 set_global_assignment -name VERILOG_MACRO "M3_FBUSY_BUILD=1"
 set_global_assignment -name VERILOG_MACRO "M3_CPUMIN=1"
 set_global_assignment -name VERILOG_MACRO "M3_NO_CPUMON=1"
+set_global_assignment -name VERILOG_MACRO "M3_NO_DMACNT=1"
 # The cabinet's driving block without Model 2's "Steering", "Steering smoothing" and "Analog control"
 # (m3_cab_inputs). Off: the full block is built, with its OSD lines.
 #set_global_assignment -name VERILOG_MACRO "M3_INP_LEAN=1"
