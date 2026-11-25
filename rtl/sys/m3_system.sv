@@ -102,6 +102,13 @@ module m3_system
 `endif
   // XCAP = 0 (macro M3_NO_XCAP) leaves the overlay's exception rows 8-11 at zero, so their capture logic
   // is not built: a smaller test build (study R105)
+  // DMA_DIR = 1 (macro M3_DMADIR, our fork): a Step 2 move into the Real3D's host port writes it straight from
+  // m3_scripts' FIFO (m3_scripts DIR, m3_bus DDIR), not as line writes over the bus
+`ifdef M3_DMADIR
+  parameter bit          DMA_DIR  = 1'b1,
+`else
+  parameter bit          DMA_DIR  = 1'b0,
+`endif
 `ifdef M3_NO_XCAP
   parameter bit          XCAP     = 1'b0,
 `else
@@ -553,14 +560,16 @@ module m3_system
   logic [31:8] sc_win_base;
   logic [5:0]  cf_idx;
 
-  m3_scripts #(.R3DMA(STEP2), .LDV(BR_BUS)) u_scsi (
+  logic        dh_v, dh_take;
+  logic [31:0] dh_addr, dh_data;
+  m3_scripts #(.R3DMA(STEP2), .LDV(BR_BUS), .DIR(DMA_DIR)) u_scsi (
     .clk, .rst, .step2,     // R100: Step 2.x, the Real3D DMA device on this move engine
     .c_req(cf_req), .c_we(cf_we), .c_idx(cf_idx), .c_be(cf_be), .c_wdata(cf_wdata), .c_ack(cf_ack), .c_rdata(cf_rdata),
     .win_en(sc_win_en), .win_base(sc_win_base),
     .s_req(sc_req), .s_we(sc_we), .s_addr(sc_addr), .s_be(sc_be), .s_wdata(sc_wdata), .s_ack(sc_ack), .s_rdata(sc_rdata),
     .m_req(m_req[1]), .m_cmd(m_cmd[1]), .m_addr(m_addr[1]), .m_be(m_be[1]), .m_wdata(m_wdata[1]),
     .m_ack(m_ack[1]), .m_wnext(m_wnext[1]), .m_rvalid(m_rvalid[1]), .m_rdata,
-    .irq(scsi_irq), .busy(scsi_busy));
+    .irq(scsi_irq), .busy(scsi_busy), .dh_v, .dh_addr, .dh_data, .dh_take);
 
   // ===========================================================================
   // the bus and its devices
@@ -647,7 +656,7 @@ module m3_system
   logic       tg_nw;                      // a write into the name table (the bus's tr_nw; R103, R179)
   m3_bus #(.AW(AW), .SDR_CROM(SDR_CROM), .SDR_FIXED(SDR_FIXED), .SDR_BACKUP(SDR_BACKUP), .SDR_RAM(SDR_RAM),
            .SDR_VRAM(SDR_VRAM), .CROM_BANKS(CROM_BANKS), .MIDI_GAP(MIDI_GAP_C), .FAST(BUS_FAST), .R3P(BUS_R3P), .TGT(TG_TIMING), .TG_MHZ(CLK_MHZ),
-           .C106_M10K(BR_C106), .OWIRE(BR_BUS), .WD_DEC(BR_BUS), .W2(W2)
+           .C106_M10K(BR_C106), .OWIRE(BR_BUS), .WD_DEC(BR_BUS), .W2(W2), .DDIR(DMA_DIR)
 `ifdef M3_STEP2_BUS
            , .STEP2(STEP2), .SDR_FIX8(SDR_FIX8), .RTC_HZ(CLK_HZ), .EXT_SEC(BR_SEC)
 `endif
@@ -671,7 +680,8 @@ module m3_system
     .r3d_cfg0, .r3d_cfg1, .r3d_cfg2,
     .jt_wr, .jt_wdata, .jt_busy, .jt_tdo, .jt_cfg_we, .jt_cfg0, .jt_cfg1, .jt_cfg2,
     .snd_we, .snd_data, .snd_byte,
-    .tr_v, .tr_master, .tr_we, .tr_addr, .tr_be, .tr_data, .tr_nw(tg_nw));
+    .tr_v, .tr_master, .tr_we, .tr_addr, .tr_be, .tr_data, .tr_nw(tg_nw),
+    .d_v(dh_v), .d_addr(dh_addr), .d_wdata(dh_data), .d_take(dh_take));
 
   m3_sdr_port #(.AW(AW), .L16(SDR_L16), .LW1(SDR_LW1), .PAIR(SDR_PAIR), .RA(SDR_RA), .RA_TOP(SDR_VRAM), .RA_CONF(SDR_RA_CONF), .PW(SDR_PW), .FWD(SDR_FWD), .FREQ(SDR_FREQ), .PW_DLY(SDR_PW_DLY)) u_sport (
     .clk, .rst(!mem_rst_n), .ra_clr(rst),
