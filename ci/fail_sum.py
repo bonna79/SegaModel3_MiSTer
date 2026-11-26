@@ -16,3 +16,14 @@ for kind in ('setup','recovery'):
         for k,v in sorted(g.items(),key=lambda kv:min(kv[1]))[:40]: print(f'{len(v):6d} {min(v):7.3f} {sum(v):9.1f}  to {k[0]}  from {k[1]}')
     print('-- worst 25 endpoints')
     for s,f,t in sorted(L)[:25]: print(f'{s:7.3f}  {f}  ->  {t}')
+    # our fork: the worst endpoint of each destination register (bits folded), so one wide bus does not fill the list
+    seen={}
+    for s,f,t in sorted(L):
+        k=re.sub(r'\[\d+\]|~DUPLICATE|_OTERM\d+','',t)
+        if k not in seen: seen[k]=(s,f,t)
+    print('-- worst 40 destination registers (bits folded)')
+    for s,f,t in list(seen.values())[:40]: print(f'{s:7.3f}  {f}  ->  {t}')
+    # and the MMU's (the Daytona 2 core uses the TLBs, Sega Rally 2 never does)
+    M=[x for x in sorted(L) if re.search(r'tlb|dun|utlb|xlat|itl|dtl|seg|bat',x[1]+x[2],re.I)]
+    print(f'-- MMU-related endpoints (tlb/dun/xlat/seg/bat in a name): {len(M)}, worst 25')
+    for s,f,t in M[:25]: print(f'{s:7.3f}  {f}  ->  {t}')
