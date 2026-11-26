@@ -858,7 +858,9 @@ module m3_system
     // D 384 (was 256, 5.8 ms; now 8.7 ms): the server on the ARM runs at 85-96% in a race and falls up to ~670
     // samples behind; each sample it is behind past D is a record the bridge skips (a small audible gap). 384 is
     // the most the 512-slot record ring takes with SLIP's 128 samples of the bridge running late on top.
-    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(384), .BLOCK(25'h1E4_0000), .WD_BITS(15)) u_snd (
+    // WD_LIM 60,000 (1.36 s, our fork 2026-11-26): SR2 races still had stalls past 743 ms (a 1.6 s silence, a
+    // watchdog reset, the music gone); 60,000 stays under p's 65,536-sample wrap (see m3_sndbridge)
+    m3_sndbridge #(.CLK_HZ(CLK_HZ), .D(384), .BLOCK(25'h1E4_0000), .WD_BITS(16), .WD_LIM(60000)) u_snd (
       .clk, .rst(rst_snd), .midi_we(snd_we), .midi_data(snd_data), .midi_byte(snd_byte), .vol(snd_vol),
       .d_req(d_req[7]), .d_we(d_we[7]), .d_addr(d_addr[7]), .d_blen(d_blen[7]), .d_din(d_din[7]), .d_be(d_be[7]),
       .d_wacc(d_wacc[7]), .d_rvalid(d_rvalid[7]), .d_ack(d_ack[7]), .d_dout(dm_dout),

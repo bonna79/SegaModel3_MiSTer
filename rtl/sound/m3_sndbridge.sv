@@ -64,6 +64,9 @@ module m3_sndbridge #(
   parameter int          RING_BITS = 15,
   parameter int          GAIN      = 2,                 // the fixed output gain, 6 dB steps (x 4, +12 dB)
   parameter int          WD_BITS   = 12,                // no record for 2^WD_BITS samples: the server is gone
+  // WD_LIM (our fork): no record for WD_LIM samples instead (1 .. 2^WD_BITS; 0: 2^WD_BITS). It must stay under
+  // 65,536 (p's wrap), or a stale record in the ring could match p again before the bridge resets
+  parameter int          WD_LIM    = 0,
   parameter bit          DBG       = 1'b0               // the bench's ports (0 in the core: tied off)
 ) (
   input  logic        clk,
@@ -165,7 +168,9 @@ module m3_sndbridge #(
   // clears, holds until then
   logic [WD_BITS:0] wd;
   logic        armed, e_rst;
-  wire         wd_rst = wd[WD_BITS] && job == J_NONE;
+  localparam int WD_N = (WD_LIM == 0) ? (1 << WD_BITS) : WD_LIM;
+  wire         wd_hit = (wd == WD_N[WD_BITS:0]);
+  wire         wd_rst = wd_hit && job == J_NONE;
   wire         srst   = rst || wd_rst;
   localparam logic [15:0] P0 = 16'(D - 1 - 512);       // p at a core reset; its low 9 bits are D - 1
 
@@ -336,7 +341,7 @@ module m3_sndbridge #(
     e_rst <= srst;
     if (srst) begin wd <= '0; armed <= 1'b0; end
     else if (s == S_REC && jd && rec_ok) begin wd <= '0; armed <= 1'b1; end
-    else if (tick && armed && !wd[WD_BITS]) wd <= wd + 1'b1;
+    else if (tick && armed && !wd_hit) wd <= wd + 1'b1;
   end
 
   logic [1:0] e_d18;
