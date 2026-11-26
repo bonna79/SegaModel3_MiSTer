@@ -146,9 +146,15 @@ module r3d_geo
   // kernel. Far models of full detail send thousands of these a frame (Sega Rally 2's snow stage: over
   // half of 20,000 triangles). 0 sends them, as before. Macro M3_R3EMPTY turns it on.
 `ifdef M3_R3EMPTY
-  parameter bit EMPTY_DROP = 1'b1
+  parameter bit EMPTY_DROP = 1'b1,
 `else
-  parameter bit EMPTY_DROP = 1'b0
+  parameter bit EMPTY_DROP = 1'b0,
+`endif
+  // WALK_PF (bonna79): the walker reads ahead (r3d_walker's PF). Macro M3_R3PF turns it on.
+`ifdef M3_R3PF
+  parameter bit WALK_PF    = 1'b1
+`else
+  parameter bit WALK_PF    = 1'b0
 `endif
 ) (
   input  logic        clk,
@@ -199,7 +205,7 @@ module r3d_geo
   logic        w_start;
 
   logic        cu_v, cu_out;
-  r3d_walker #(.CULL(CULL), .CTAB(SM_CTAB), .VP_M10K(VP_M10K)) u_walker (
+  r3d_walker #(.CULL(CULL), .CTAB(SM_CTAB), .VP_M10K(VP_M10K), .PF(WALK_PF)) u_walker (
     .clk, .rst, .start(w_start), .step15, .busy(w_busy), .overflow(w_overflow),
     .mem_req(w_req), .mem_addr(w_addr), .mem_len(w_len), .mem_ack(w_ack),
     .mem_rvalid(w_rvalid), .mem_rdata(cull_rdata),
