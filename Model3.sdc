@@ -12,6 +12,13 @@ set_false_path -to [get_registers {*cpu_rst_sync[0]}]
 set_false_path -to [get_registers {*emu|mem_rst_s[0]}]
 set_false_path -to [get_registers {*sys3|rst_s[0]}]
 
+# our fork: the SDRAM calibration's phase step handshake between clk_sys (m3_sdr_cal) and CLK_50M (m3_sdr_dps):
+# toggles into two-flop synchronisers, and the direction, held stable from before the request until its answer
+set_false_path -to [get_registers {*u_dps|dps_rq_s[0]}]
+set_false_path -to [get_registers {*u_dps|dps_dn_s[0]}]
+set_false_path -from [get_registers {*u_cal|dps_up}] -to [get_registers {*u_dps|updn}]
+set_false_path -to [get_registers {*u_cal|ack_s[0]}]
+
 # ----------------------------------------------------------------------------
 # The SDRAM interfaces (study R187)
 # ----------------------------------------------------------------------------

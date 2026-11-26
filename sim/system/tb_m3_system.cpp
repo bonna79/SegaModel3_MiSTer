@@ -228,6 +228,7 @@ int main(int argc, char **argv) {
   t = new Vm3_system;
   auto tick = [&]() {
     t->sd_dq_i = sd.dq(cyc);
+    t->dps_ack = t->dps_req;   // our fork (SDR_CAL): the PLL's phase step answered at once (the phase does not move here)
     t->sd2_dq_i = sd2_nomod ? 0xFFFF : sd2.dq(cyc);
     t->sd2_en = sd2_nomod != 2;
     // DDR3: this cycle's BUSY and read beat

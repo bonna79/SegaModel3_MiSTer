@@ -12,7 +12,12 @@ module pll (
 		output wire  outclk_1, // outclk1.clk  clk_sys (125 MHz; pll_0002.v), the whole Model 3 system
 		output wire  outclk_2, // outclk2.clk  clk_sys's rate at 3500 ps (0.5 ns before 180 degrees): SDRAM_CLK's DDIO register (R187)
 		output wire  outclk_3, // outclk3.clk  clk_sys's rate at 3250 ps (0.75 ns before 180 degrees): SDRAM2_CLK's DDIO register (R187)
-		output wire  locked    //  locked.export
+		output wire  locked,   //  locked.export
+		input  wire  scanclk,     // our fork: dynamic phase shift of outclk_2 (m3_sdr_dps)
+		input  wire  phase_en,
+		input  wire  updn,
+		input  wire  [4:0] cntsel,
+		output wire  phase_done
 	);
 
 	pll_0002 pll_inst (
@@ -22,7 +27,12 @@ module pll (
 		.outclk_1 (outclk_1), // outclk1.clk
 		.outclk_2 (outclk_2), // outclk2.clk
 		.outclk_3 (outclk_3), // outclk3.clk
-		.locked   (locked)    //  locked.export
+		.locked   (locked),   //  locked.export
+		.scanclk    (scanclk),
+		.phase_en   (phase_en),
+		.updn       (updn),
+		.cntsel     (cntsel),
+		.phase_done (phase_done)
 	);
 
 endmodule

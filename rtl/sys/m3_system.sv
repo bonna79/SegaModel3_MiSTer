@@ -70,6 +70,7 @@ module m3_system
 #(
   parameter int          COL_BITS = 10,
   parameter bit          DUAL     = 1'b1,        // the 128 MB module
+  parameter bit          SDR_CAL  = 1'b0,        // our fork: SDRAM clock phase + read capture calibration (m3_sdr_cal)
   parameter logic [4:0]  CROM_BANKS = 5'd8,
   parameter int          EE_TWP   = 0,           // the EEPROM's write time, clocks (0: 2 ms at CLK_HZ)
   parameter int          MIDI_GAP = 0,           // a MIDI byte, clocks (0: 320 us at CLK_HZ)
@@ -237,6 +238,11 @@ module m3_system
   output logic        ioctl_wait,
 
   input  logic [2:0]  rd_lat_sel,
+  // our fork (SDR_CAL): the OSD on a manual capture value; the PLL phase step handshake (m3_sdr_dps)
+  input  logic        sdr_cal_man,
+  output logic        dps_req,
+  output logic        dps_up,
+  input  logic        dps_ack,
   output logic        sd_cke, sd_cs_n, sd_ras_n, sd_cas_n, sd_we_n,
   output logic [1:0]  sd_ba,
   output logic [12:0] sd_a,
@@ -395,6 +401,41 @@ module m3_system
   assign wb_din = (wb_grant == 3'd4) ? r3_wbd : sp_wbd;
   assign wb_be  = (wb_grant == 3'd4) ? r3_wbb : sp_wbb;
 `endif
+  // our fork: the calibration (SDR_CAL) owns the loader's write port and port 5 (r3d_texup, in reset until the
+  // ROMs are in) while it runs, resets the controller between phase positions, and holds mem_ready low for the
+  // loader (so ioctl_wait for the HPS) until it is done
+  logic          cal_busy, cal_done, cal_rst, cal_wreq, cal_rreq;
+  logic [AW:1]   cal_waddr, cal_raddr;
+  logic [15:0]   cal_wdin;
+  logic [2:0]    cal_sel /* verilator public_flat_rd */;
+  logic [15:0]   cal_stat /* verilator public_flat_rd */;   // {done, ok, err, CL+n, phase step, run}
+  logic          sdr_rst_n;
+  logic          ld_ack_m;
+  generate if (SDR_CAL) begin : g_cal
+    m3_sdr_cal #(.AW(AW)) u_cal (
+      .clk, .rst_n(mem_rst_n), .start(ioctl_download), .man(sdr_cal_man), .man_sel(rd_lat_sel),
+      .sdr_ready(mem_ready), .sdr_rst(cal_rst), .rd_sel(cal_sel),
+      .busy(cal_busy), .done(cal_done),
+      .wr_req(cal_wreq), .wr_addr(cal_waddr), .wr_din(cal_wdin), .wr_ack(ld_ack_m),
+      .rd_req(cal_rreq), .rd_addr(cal_raddr), .rd_dout(p_dout[5]), .rd_ack(p_ack[5]),
+      .dps_req, .dps_up, .dps_ack, .stat(cal_stat), .mask());
+    always_ff @(posedge clk) sdr_rst_n <= mem_rst_n && !cal_rst;
+  end else begin : g_nocal
+    assign {cal_busy, cal_rst, cal_wreq, cal_rreq} = '0;
+    assign cal_done = 1'b1;
+    assign {cal_waddr, cal_raddr, cal_wdin} = '0;
+    assign cal_sel = rd_lat_sel;
+    assign cal_stat = '0;
+    assign {dps_req, dps_up} = '0;
+    assign sdr_rst_n = mem_rst_n;
+    wire _unused_cal = &{1'b0, sdr_cal_man, dps_ack};
+  end endgenerate
+  wire           sdr_wreq  = cal_busy ? cal_wreq  : ld_req;
+  wire [AW:1]    sdr_waddr = cal_busy ? cal_waddr : ld_addr;
+  wire [15:0]    sdr_wdin  = cal_busy ? cal_wdin  : ld_din;
+  wire [1:0]     sdr_wbe   = cal_busy ? 2'b11     : ld_be;
+  assign ld_ack = ld_ack_m && !cal_busy;
+
   m2_sdram #(.COL_BITS(COL_BITS), .NP(NSP), .T_REFI(T_REFI_C), .T_RC(T_RC_C), .T_RAS(T_RAS_C), .ACK_HOLD(1), .DUAL(DUAL), .MASK_ON_A(DUAL),
              .PRI(SDR_PRI), .PRI_CAP(SDR_PRI_CAP), .AGE(SDR_AGE), .AGE_T(SDR_AGE_T), .BXOR(SDR_BXOR), .BXC(SDR_BXC),
              .L16({{(NSP-1){1'b0}}, SDR_L16}), .PAIR({{(NSP-1){1'b0}}, SDR_PAIR}),
@@ -405,9 +446,9 @@ module m3_system
              .WB({{(NSP-1){1'b0}}, 1'b1}), .FDSP(SDR_FDSP), .HITRD(SDR_HITRD),
              .SHD(SDR_SHD ? NSP'(6'b101111) : NSP'(0))) u_sdram (   // port 0 (the bus) writes in bursts (R101)
 `endif
-    .clk, .rst_n(mem_rst_n), .ready(mem_ready), .rd_lat_sel,
+    .clk, .rst_n(sdr_rst_n), .ready(mem_ready), .rd_lat_sel(cal_sel),
     .sd_cke, .sd_cs_n, .sd_ras_n, .sd_cas_n, .sd_we_n, .sd_ba, .sd_a, .sd_dqm, .sd_dq_o, .sd_dq_oe, .sd_dq_i,
-    .wr_req(ld_req), .wr_addr(ld_addr), .wr_din(ld_din), .wr_be(ld_be), .wr_ack(ld_ack),
+    .wr_req(sdr_wreq), .wr_addr(sdr_waddr), .wr_din(sdr_wdin), .wr_be(sdr_wbe), .wr_ack(ld_ack_m),
     .p_req, .p_we, .p_addr, .p_din, .p_be, .p_dout, .p_ack, .p_long, .p_lo, .wb_col, .wb_din, .wb_be,
 `ifdef M3_R3B
     .wb_grant(wb_grant),
@@ -429,7 +470,7 @@ module m3_system
   logic [7:0]  cfg_prof /* verilator public_flat_rd */, cfg_pflg;   // the input profile and its flags
   m3_loader #(.AW(AW), .BACKUP(SDR_BACKUP), .FIX8(SDR_FIX8), .OWIRE(BR_LD),
               .VROM_X((VROM_LOC != 0) && (VROM_LOC == XMEM)), .VROM_AT(27'h400_0000)) u_ld (   // R100: VROM placement
-    .clk, .rst(!mem_rst_n), .mem_ready, .x_ok(ddr_ok),
+    .clk, .rst(!mem_rst_n), .mem_ready(mem_ready && cal_done), .x_ok(ddr_ok),
     .ioctl_download, .ioctl_index, .ioctl_wr, .ioctl_addr, .ioctl_dout, .ioctl_wait,
     .sdr_wr_req(ld_req), .sdr_wr_addr(ld_addr), .sdr_wr_din(ld_din), .sdr_wr_be(ld_be), .sdr_wr_ack(ld_ack),
     .x_req(lx_req), .x_addr(lx_addr), .x_din(lx_din), .x_ack(lx_ack),
@@ -970,7 +1011,7 @@ module m3_system
   logic [AW:1] tu_saddr;
   logic [63:0] tu_sdout, xt_dout;
   assign t3_ready = t3_drop || tu_ready;
-  assign p_req[5] = tu_sreq && !vrom_x; assign p_addr[5] = tu_saddr;
+  assign p_req[5] = cal_busy ? cal_rreq : (tu_sreq && !vrom_x); assign p_addr[5] = cal_busy ? cal_raddr : tu_saddr;
   assign tu_sack  = vrom_x ? xt_ack : p_ack[5];
   assign tu_sdout = vrom_x ? xt_dout : p_dout[5];
   r3d_texup #(.AW(AW), .SDR_VROM(SDR_VROM), .DDR_STG(D_STG), .DDR_TEX(D_TEX)
@@ -1391,7 +1432,7 @@ module m3_system
         6'd19: ov_v <= {r3d_cfg0[15:0], r3d_cfg2[15:0]};
         // row 5: SDRAM and loader: bytes loaded; flags; the CPU's longest bus wait
         6'd20: ov_v <= {5'd0, ld_bytes};
-        6'd21: ov_v <= {3'd0, mem_ready, 3'd0, rom_loaded, 3'd0, ld_ovf, 3'd0, wd_flag, 16'd0};
+        6'd21: ov_v <= {3'd0, mem_ready, 3'd0, rom_loaded, 3'd0, ld_ovf, 3'd0, wd_flag, cal_stat};   // cal: {done, ok, err, CL+n, phase step, run}
         6'd22: ov_v <= cpu_wd_max;
         6'd23: ov_v <= {16'd0, cpi_q8};             // CPI x 256, the last second
         // row 6: CPU performance, the last second: cycles, instructions, data memory wait, fetch waiting

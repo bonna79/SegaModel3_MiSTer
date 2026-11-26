@@ -32,6 +32,8 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/dbg/m3_fps.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/dbg/m3_cputest.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/real3d/r3d_ram.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/m2_sdram.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/m3_sdr_cal.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/mem/m3_sdr_dps.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/m2_video_timing.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/m3_tilegen_pal.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/video/m3_tilegen_fetch.sv

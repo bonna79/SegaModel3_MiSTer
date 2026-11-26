@@ -120,7 +120,7 @@ localparam CONF_STR = {
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	// the SDRAM read capture (m2_sdram rd_lat_sel, n = CL + n), per controller, for the board's margin above 120 MHz
 	// (R184): change, then Reset
-	"O[74:73],SDRAM read capture,CL+2,CL+1,CL+3;",
+	"O[74:73],SDRAM read capture,Auto,CL+2,CL+1,CL+3;",   // our fork: Auto = m3_sdr_cal at the ROM load
 `ifdef M3_CPU_SDR2
 	"O[76:75],SDRAM2 read capture,CL+2,CL+1,CL+3;",
 `endif
@@ -217,6 +217,11 @@ wire clk_sys;        // 125 MHz (D-69), everything (outclk_1; outclk_0 is the CP
 wire clk_sdr;        // outclk_2: clk_sys's rate, 0.5 ns before its 180 degrees (3500 ps at 125 MHz): SDRAM_CLK's DDIO
 wire clk_sdr2;       // outclk_3: 0.75 ns before (3250 ps at 125 MHz): SDRAM2_CLK's DDIO (m3_sdr_clk below; R187)
 wire pll_locked;
+// our fork: outclk_2 (clk_sdr, SDRAM_CLK) is stepped at run time by the calibration (m3_sdr_cal in m3_system,
+// m3_sdr_dps here on CLK_50M: Cyclone V's scan clock stays under 100 MHz), one VCO / 8 step a request
+wire dps_req, dps_up, dps_ack;
+wire dps_phase_en, dps_updn, dps_phase_done;
+wire [4:0] dps_cntsel;
 pll pll
 (
 	.refclk(CLK_50M),
@@ -225,7 +230,16 @@ pll pll
 	.outclk_1(clk_sys),
 	.outclk_2(clk_sdr),
 	.outclk_3(clk_sdr2),
-	.locked(pll_locked)
+	.locked(pll_locked),
+	.scanclk(CLK_50M),
+	.phase_en(dps_phase_en),
+	.updn(dps_updn),
+	.cntsel(dps_cntsel),
+	.phase_done(dps_phase_done)
+);
+m3_sdr_dps #(.CNT(5'd2)) u_dps (
+	.scanclk(CLK_50M), .req(dps_req), .up(dps_up), .ack(dps_ack),
+	.phase_en(dps_phase_en), .updn(dps_updn), .cntsel(dps_cntsel), .phase_done(dps_phase_done)
 );
 
 // The system clock (outclk_1). A diagnostic build at another rate changes this
@@ -286,7 +300,10 @@ localparam bit INP_LEAN = 1'b0;
 `endif
 
 // the OSD's order to m2_sdram's rd_lat_sel (index n = CL + n): CL+2 (2, the default entry), CL+1 (1), CL+3 (3)
-wire [2:0] sdr_cap1 = (status[74:73] == 2'd1) ? 3'd1 : (status[74:73] == 2'd2) ? 3'd3 : 3'd2;
+// our fork: entry 0 is Auto (m3_sdr_cal: the SDRAM clock's phase and the capture depth measured when the ROMs
+// load); CL+2 (1), CL+1 (2), CL+3 (3) are the old fixed choices, at the PLL's own phase
+wire       sdr_man1 = status[74:73] != 2'd0;
+wire [2:0] sdr_cap1 = (status[74:73] == 2'd2) ? 3'd1 : (status[74:73] == 2'd3) ? 3'd3 : 3'd2;
 `ifdef M3_CPU_SDR2
 wire [2:0] sdr_cap2 = (status[76:75] == 2'd1) ? 3'd1 : (status[76:75] == 2'd2) ? 3'd3 : 3'd2;
 `else
@@ -295,12 +312,13 @@ wire [2:0] sdr_cap2 = 3'd2;
 m3_system #(.CLK_HZ(SYS_HZ), .CPI_MON(1'b1), .INPUTS(INPUTS), .INP_LEAN(INP_LEAN), .SDR_BXOR(1'b1), .SDR_BXC(1'b1), .SDR_L16(1'b1), .SDR_LW1(1'b1),
             .SDR_PAIR(1'b1), .SDR_PW(1'b1),
             .BUS_FAST(1'b1), .BUS_R3P(1'b1), .SDR_FREQ(1'b1), .SDR_FWD(1'b1), .SDR_FDSP(1'b1),
-            .SDR_PW_DLY(8), .ISB(1'b1), .W2(CPU_SDR2)) sys3
+            .SDR_PW_DLY(8), .ISB(1'b1), .W2(CPU_SDR2), .SDR_CAL(1'b1)) sys3
 (
 	.clk(clk_sys), .mem_rst_n(mem_rst_n), .reset(RESET | status[0] | buttons[1]),
 	.ioctl_download(ioctl_download), .ioctl_index(ioctl_index), .ioctl_wr(ioctl_wr),
 	.ioctl_addr(ioctl_addr), .ioctl_dout(ioctl_dout), .ioctl_wait(ioctl_wait),
 	.rd_lat_sel(sdr_cap1),                   // OSD: CL+2 (the default: Model 2's board value, its R411), CL+1, CL+3
+	.sdr_cal_man(sdr_man1), .dps_req(dps_req), .dps_up(dps_up), .dps_ack(dps_ack),   // our fork: Auto (m3_sdr_cal)
 	.sd2_rd_lat_sel(sdr_cap2),               // the second SDRAM's, the same choices
 	.sd_cke(SDRAM_CKE), .sd_cs_n(SDRAM_nCS), .sd_ras_n(SDRAM_nRAS), .sd_cas_n(SDRAM_nCAS), .sd_we_n(SDRAM_nWE),
 	.sd_ba(SDRAM_BA), .sd_a(SDRAM_A), .sd_dqm(sdr_dqm), .sd_dq_o(sd_dq_o), .sd_dq_oe(sd_dq_oe), .sd_dq_i(SDRAM_DQ),
@@ -406,7 +424,8 @@ pll pll
 	.outclk_1(clk_cpu),
 	.outclk_2(),
 	.outclk_3(),
-	.locked(pll_locked)
+	.locked(pll_locked),
+	.scanclk(CLK_50M), .phase_en(1'b0), .updn(1'b0), .cntsel(5'd0), .phase_done()
 );
 
 wire reset = RESET | status[0] | buttons[1];

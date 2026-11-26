@@ -17,7 +17,14 @@ module  pll_0002(
 	output wire outclk_3,
 
 	// interface 'locked'
-	output wire locked
+	output wire locked,
+
+	// our fork: dynamic phase shift (m3_sdr_dps steps outclk_2, the SDRAM clock)
+	input wire scanclk,
+	input wire phase_en,
+	input wire updn,
+	input wire [4:0] cntsel,
+	output wire phase_done
 );
 
 	altera_pll #(
@@ -80,11 +87,16 @@ module  pll_0002(
 		.phase_shift17("0 ps"),
 		.duty_cycle17(50),
 		.pll_type("General"),
-		.pll_subtype("General")
+		.pll_subtype("DPS")
 	) altera_pll_i (
 		.rst	(rst),
 		.outclk	({outclk_3, outclk_2, outclk_1, outclk_0}),
 		.locked	(locked),
+		.phase_en	(phase_en),
+		.updn	(updn),
+		.cntsel	(cntsel),
+		.phase_done	(phase_done),
+		.scanclk	(scanclk),
 		.fboutclk	( ),
 		.fbclk	(1'b0),
 		.refclk	(refclk)
