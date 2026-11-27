@@ -35,8 +35,9 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
                       // Model 3 (bonna79): CK the converter clock in MHz the enables are fractions of (100 = Model 2's
                       // clk_mem; 70 = Model 3's clk_hps). Time here is always 10 units a clock, so every count in clocks
                       // reads as before and a time in units is clocks x 10 (ns only at CK 100). CW the DUT's ring colour
-                      // bits; EQ6 = 1 adds a 6-bit ring (CW 6, a line a block) beside an 8-bit one, both fed the
-                      // picture cut to six bits a channel, and checks their outputs are the same on every clock.
+                      // bits; EQ6 = n (5..7) adds an n-bit ring beside an 8-bit one, both fed the picture cut to n
+                      // bits a channel (each channel's n bits, then its top bits again), and checks their outputs
+                      // are the same on every clock.
                       // GLUE = 1 adds Model 3's m3_scan15_out (its own enable, synchronisers and the 24/15 kHz mux)
                       // and checks its pins against this bench's converter on every clock after reset.
                       parameter int CK = 100, parameter int CW = 8, parameter int EQ6 = 0, parameter int GLUE = 0);
@@ -140,9 +141,12 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
 `endif
                   .ce_in(1'b0), .de_in(1'b0), .vb_in(1'b1),
                   .rgb_in(24'd0), .ce_out(1'b0), .nl(1'b0), .ml(1'b0), .dv(1'b0), .dvp(1'b0), .o_hs(), .o_vs(), .o_de(), .o_field(), .o_rgb());
-  // ---- EQ6: the 6-bit ring against the 8-bit one on a 6-bit picture
+  // ---- EQ6: the n-bit ring against the 8-bit one on an n-bit picture
+  function automatic logic [7:0] qch(input logic [7:0] c);
+    for (int i = 0; i < 8; i++) qch[7 - i] = c[7 - (i % ((EQ6 != 0) ? EQ6 : 8))];
+  endfunction
   function automatic logic [23:0] q6(input logic [23:0] c);
-    return {c[23:18], c[23:22], c[15:10], c[15:14], c[7:2], c[7:6]};
+    return {qch(c[23:16]), qch(c[15:8]), qch(c[7:0])};
   endfunction
   logic        e8_hs, e8_vs, e8_de, e8_f, e6_hs, e6_vs, e6_de, e6_f;
   logic [23:0] e8_rgb, e6_rgb;
@@ -151,7 +155,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
     m2_scan15 #(.RING(RING), .DPX_I(DPX_I), .DPX_M(DPX_M), .DPX_N(DPX_N), .DPX_D(DPX_D), .CW(8)) e8 (.clk(clk), .rst_n(rst_n),
       .en(1'b1), .img_tag(tag), .pair_en(pe != 0), .ce_in(ce_in), .de_in(de_s), .vb_in(vb_s), .rgb_in(q6(rgb_s)),
       .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .o_hs(e8_hs), .o_vs(e8_vs), .o_de(e8_de), .o_field(e8_f), .o_rgb(e8_rgb));
-    m2_scan15 #(.RING(RING), .DPX_I(DPX_I), .DPX_M(DPX_M), .DPX_N(DPX_N), .DPX_D(DPX_D), .CW(6), .MAXD(512)) e6 (.clk(clk), .rst_n(rst_n),
+    m2_scan15 #(.RING(RING), .DPX_I(DPX_I), .DPX_M(DPX_M), .DPX_N(DPX_N), .DPX_D(DPX_D), .CW((EQ6 != 0) ? EQ6 : 8)) e6 (.clk(clk), .rst_n(rst_n),
       .en(1'b1), .img_tag(tag), .pair_en(pe != 0), .ce_in(ce_in), .de_in(de_s), .vb_in(vb_s), .rgb_in(q6(rgb_s)),
       .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .o_hs(e6_hs), .o_vs(e6_vs), .o_de(e6_de), .o_field(e6_f), .o_rgb(e6_rgb));
     always @(posedge clk) if (rst_n) begin
@@ -457,7 +461,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
     $display("  margin before the data is written (smallest, ns): %0d   margin before it is overwritten (smallest, ns): %0d",
              min_avail * 100 / CK, min_over * 100 / CK);
     if (GLUE != 0) $display("  GLUE: m3_scan15_out against the converter: %0d clocks compared, %0d differ", gl_n, gl_bad);
-    if (EQ6 != 0) $display("  EQ6: 6-bit ring against 8-bit on a 6-bit picture: %0d clocks compared, %0d differ", eq_n, eq_bad);
+    if (EQ6 != 0) $display("  EQ6: %0d-bit ring against 8-bit on a %0d-bit picture: %0d clocks compared, %0d differ", EQ6, EQ6, eq_n, eq_bad);
     if (dv && !dvp) begin
       // R983, 480i: whole clocks (every line 6,560, every pixel 10); equal fields, so every vsync interval is half a
       // line off one native frame, alternately early and late (a label repeat aside); field 1 half a line lower; the
