@@ -784,3 +784,7 @@ set_instance_assignment -name MAX_FANOUT 16 -to "emu:emu|m3_system:sys3|tg_go"
 # sys140: m3_xmem's own reset copy, duplicated
 set_instance_assignment -name MAX_FANOUT 64 -to "emu:emu|m3_system:sys3|rst_xm"
 set_global_assignment -name VERILOG_MACRO "M3_DIRN=1024"
+# bonna79: the 15 kHz picture for a CRT (OSD "Video: 15kHz interlaced"): Model 2's scan converter m2_scan15 on the
+# video output, 480i at 15.7 / 15.4 / 15.1 kHz or DV; the game keeps its 24 kHz timing. 15 M10K (ring of 15 lines,
+# six bits a channel). Off: VGA_F1 0 and no 15 kHz OSD lines, the core as before.
+set_global_assignment -name VERILOG_MACRO "M3_SCAN15=1"

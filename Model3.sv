@@ -77,7 +77,8 @@ assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DD
 `endif
 
 assign VGA_SL = 0;
-assign VGA_F1 = 0;
+wire   vga_f1;                            // the 15 kHz converter's field (M3_SCAN15); 0 at 24 kHz
+assign VGA_F1 = vga_f1;
 assign VGA_SCALER  = 0;
 assign VGA_DISABLE = 0;
 assign HDMI_FREEZE = 0;
@@ -118,6 +119,16 @@ localparam CONF_STR = {
 	"O[9:8],FPS average,1 s,5 s,10 s;",      // the OSD's default is the first entry (m3_fps avg)
 	"O[7:6],Volume,Normal,+6 dB,+12 dB;",    // on the sound link's fixed gain (m3_sndbridge GAIN), saturating
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
+`ifdef M3_SCAN15
+	// bonna79: the 15 kHz picture for a CRT, Model 2's scan converter (m2_scan15, its R898 / R939 / R983; the same bits
+	// and labels as Model 2's OSD): the game stays on its native 24 kHz timing and the converter shows it as 480i,
+	// 384 -> 480 lines by an exact 4:5 blend, at the line rate picked below. 273/274 (15.7 kHz) first: most sets take
+	// only that one. A 24 kHz CRT shows no OSD: set it on HDMI, or on a 31/24 kHz monitor, once (it is saved)
+	"O[42],Video,Native 24kHz,15kHz interlaced;",
+	"O[61:60],15kHz lines,273/274 (15.7kHz),268/269 (15.4kHz),262/263 (15.1kHz),265 (15.2kHz DV);",
+	"O[77],15kHz DV scan,480i,240p;",
+	"O[67],15kHz pairing,Auto,Off;",
+`endif
 	// the SDRAM read capture (m2_sdram rd_lat_sel, n = CL + n), per controller, for the board's margin above 120 MHz
 	// (R184): change, then Reset
 	"O[74:73],SDRAM read capture,CL+2,CL+1,CL+3;",
@@ -357,6 +368,7 @@ wire [15:0] sd_dq_o;
 wire        sd_dq_oe;
 wire  [1:0] sdr_dqm;
 wire        ce_pix, v_hs, v_vs, v_hb, v_vb, run_led;
+wire  [1:0] v_show;                       // the 3D frame on show (r3d_cmd show_buf): the 15 kHz pairing's image tag
 wire  [7:0] v_r, v_g, v_b;
 
 // DDR3 may be touched once Main has finished the load (R71, the viewer's
@@ -448,7 +460,7 @@ m3_system #(.CLK_HZ(SYS_HZ), .CPI_MON(1'b0), .INPUTS(INPUTS), .INP_LEAN(INP_LEAN
 	.ddr_ok(ddr_ok), .DDRAM_CLK(DDRAM_CLK), .DDRAM_BUSY(DDRAM_BUSY), .DDRAM_BURSTCNT(DDRAM_BURSTCNT), .DDRAM_ADDR(DDRAM_ADDR),
 	.DDRAM_DIN(DDRAM_DIN), .DDRAM_BE(DDRAM_BE), .DDRAM_WE(DDRAM_WE), .DDRAM_RD(DDRAM_RD),
 	.DDRAM_DOUT(DDRAM_DOUT), .DDRAM_DOUT_READY(DDRAM_DOUT_READY),
-	.ce_pix(ce_pix), .v_hs(v_hs), .v_vs(v_vs), .v_hblank(v_hb), .v_vblank(v_vb),
+	.ce_pix(ce_pix), .v_hs(v_hs), .v_vs(v_vs), .v_hblank(v_hb), .v_vblank(v_vb), .v_show(v_show),
 	.v_r(v_r), .v_g(v_g), .v_b(v_b), .overlay_en(~opt[0]), .fps_en(opt[1]), .fps_avg(opt[5:4]),
 	.joystick_0(joystick_0[15:0]), .joystick_1(joystick_1[15:0]), .joy_l0(ain[71:56]), .joy_l1(ain[55:40]), .joy_r0(ain[39:24]),
 	.joy_lt0(ain[23:16]), .joy_rt0(ain[15:8]), .paddle0(ain[7:0]),
@@ -499,7 +511,7 @@ reg  [27:0] vq;
 reg  [1:0]  vce = 2'b00;
 always @(posedge clk_sys) begin
 	vce <= {vce[0], ce_pix};
-	if (ce_pix) vq <= {v_r, v_g, v_b, v_hs, v_vs, ~(v_hb | v_vb), 1'b0};
+	if (ce_pix) vq <= {v_r, v_g, v_b, v_hs, v_vs, ~(v_hb | v_vb), v_vb};   // bit 0: the vertical blank (M3_SCAN15)
 end
 reg  [27:0] vh;
 reg         vh_ce = 1'b0;
@@ -508,8 +520,23 @@ always @(posedge clk_hps) begin
 	vh    <= vq;
 end
 assign CLK_VIDEO = clk_hps;
+
+`ifdef M3_SCAN15
+// bonna79: the 15 kHz picture for a CRT (rtl/video/m3_scan15_out.sv: Model 2's m2_scan15 on clk_hps, the OSD's
+// "Video: 15kHz interlaced"); at 24 kHz the pins carry vh as below
+reg  [2:0] s15_rst_s = 3'b000;
+always @(posedge clk_hps) s15_rst_s <= {s15_rst_s[1:0], mem_rst_n};
+m3_scan15_out #(.CW(6)) u_scan15 (
+	.clk(clk_hps), .rst_n(s15_rst_s[2]), .osd_15k(status[42]), .osd_lines(status[61:60]), .osd_dvp(status[77]),
+	.osd_pair_off(status[67]), .show(v_show),
+	.ce_in(vh_ce), .rgb_in(vh[27:4]), .hs_in(vh[3]), .vs_in(vh[2]), .de_in(vh[1]), .vb_in(vh[0]),
+	.ce_pix(CE_PIXEL), .rgb({VGA_R, VGA_G, VGA_B}), .hs(VGA_HS), .vs(VGA_VS), .de(VGA_DE), .f1(vga_f1));
+`else
 assign CE_PIXEL  = vh_ce;
 assign {VGA_R, VGA_G, VGA_B, VGA_HS, VGA_VS, VGA_DE} = vh[27:1];
+assign vga_f1 = 1'b0;
+wire _unused_s15 = &{1'b0, vh[0], v_show};
+`endif
 
 assign LED_USER = run_led;
 
@@ -623,6 +650,7 @@ assign CLK_VIDEO = clk_sys;
 assign CE_PIXEL = ce_pix;
 
 assign VGA_DE = ~(HBlank | VBlank);
+assign vga_f1 = 1'b0;
 assign VGA_HS = HSync;
 assign VGA_VS = VSync;
 assign VGA_G  = (!col || col == 2) ? video : 8'd0;
