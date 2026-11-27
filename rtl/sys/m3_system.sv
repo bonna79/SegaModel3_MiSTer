@@ -100,6 +100,13 @@ module m3_system
 `else
   parameter bit          FBDBG    = 1'b0,
 `endif
+  // MDIAG = 1 (macro M3_MEMDIAG, bonna79, with M3_RELEASE and M3_FBUSY_BUILD): m3_mem_diag's counters of the CPU's
+  // memory waits and the first SDRAM's ports, the last second, on the frame-busy build's overlay rows 3-5
+`ifdef M3_MEMDIAG
+  parameter bit          MDIAG    = 1'b1,
+`else
+  parameter bit          MDIAG    = 1'b0,
+`endif
   // XCAP = 0 (macro M3_NO_XCAP) leaves the overlay's exception rows 8-11 at zero, so their capture logic
   // is not built: a smaller test build (study R105)
 `ifdef M3_NO_XCAP
@@ -400,6 +407,7 @@ module m3_system
   // reads, 3 its VROM reads, 4 r3d_mem, 5 r3d_texup; the loader on wr_*
   // ===========================================================================
   localparam int NSP = 6;
+  logic [5:0] sd_dbg_req, sd_dbg_grant;   // m2_sdram's pending and in-flight ports (m3_mem_diag; unread otherwise)
   logic          mem_ready;
   logic          ld_req, ld_ack;
   logic [AW:1]   ld_addr;
@@ -455,7 +463,7 @@ module m3_system
 `ifdef M3_R3B
     .wb_grant(wb_grant),
 `endif
-    .dbg_req(), .dbg_grant());
+    .dbg_req(sd_dbg_req), .dbg_grant(sd_dbg_grant));
 
   logic        k_done, sdr1_usable;    // sys140: the first SDRAM's calibration over; up and calibrated
   logic [26:0] ld_bytes;
@@ -536,6 +544,7 @@ module m3_system
   localparam bit MON_ON = CPI_MON && !RELEASE;
   localparam bit FB_ON  = FBUSY   && (!RELEASE || FBDBG);
   localparam bit XC_ON  = XCAP    && OV_ON && !RELEASE;
+  localparam bit MD_ON  = MDIAG   && OV_MIN;           // the memory-wait counters (m3_mem_diag), frame-busy build only
 
   logic             cpu_dec_wr;           // cpu78: an mtdec (a clock late) and DEC, for the frame-busy overlay
   logic [31:0]      cpu_dec_val;
@@ -1391,6 +1400,14 @@ module m3_system
     assign fb3_mm = '0; assign fb3_long = '0; assign fb3_sum = '0; assign fb3_r3d = '0; assign fb_dec = '0;
   end endgenerate
 
+  logic [12:0][31:0] md_o;
+  generate if (MD_ON) begin : g_mdiag
+    m3_mem_diag #(.CLK_HZ(CLK_HZ)) u_mdiag (.clk, .rst, .ev(cpu_ev), .ev_mmu(cpu_ev_mmu), .m_req(m_req[0]), .m_ack(m_ack[0]),
+      .m_rvalid(m_rvalid[0]), .m_cmd(m_cmd[0]), .sd_pend(sd_dbg_req), .sd_fly(sd_dbg_grant), .o(md_o));
+  end else begin : g_nomdiag
+    assign md_o = '0;
+  end endgenerate
+
   logic [5:0]  ov_idx;
   logic [31:0] ov_v;
   logic        ov_box, ov_ink;
@@ -1412,7 +1429,9 @@ module m3_system
       // rest}; row 6 {min, max} of the DMA wait and the DMA wait over the second; every other row 0)
       if (OV_MIN) ov_v <= (ov_idx == 6'd28) ? fb_mm : (ov_idx == 6'd29) ? fb_lo : (ov_idx == 6'd30) ? fb_hi :
                           (ov_idx == 6'd31) ? fb3_long : (ov_idx == 6'd24) ? fb3_r3d : (ov_idx == 6'd25) ? fb3_sum :
-                          (ov_idx == 6'd26) ? fb_dec : 32'd0;
+                          (ov_idx == 6'd26) ? fb_dec :
+                          (MD_ON && ov_idx >= 6'd12 && ov_idx <= 6'd23) ? md_o[ov_idx - 6'd12] :
+                          (MD_ON && ov_idx == 6'd27) ? md_o[12] : 32'd0;
       // (cpu78: row 6's third value is the first value the CPU wrote to DEC in the last second, held while none is)
       // (r3d75: row 6's first value is now the Real3D's {drops, swaps, longest swap wait}; the DMA wait's {min, max},
       // which it replaces, is left unread and so not built, which pays for most of it)
