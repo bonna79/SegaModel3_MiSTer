@@ -871,3 +871,7 @@ set_location_assignment DSP_X54_Y26_N0 -to "ascal:ascal|Add173~8"
 set_location_assignment DSP_X86_Y24_N0 -to "ascal:ascal|Add168~8"
 set_location_assignment DSP_X54_Y24_N0 -to "ascal:ascal|Add169~8"
 set_location_assignment DSP_X86_Y22_N0 -to "ascal:ascal|Mult14~8"
+# bonna79: the 15 kHz picture for a CRT (OSD "Video: 15kHz interlaced"): Model 2's scan converter m2_scan15 on the
+# video output, 480i at 15.7 / 15.4 / 15.1 kHz or DV; the game keeps its 24 kHz timing. 16 M10K (ring of 16 lines,
+# six bits a channel). Off: VGA_F1 0 and no 15 kHz OSD lines, the core as before.
+set_global_assignment -name VERILOG_MACRO "M3_SCAN15=1"

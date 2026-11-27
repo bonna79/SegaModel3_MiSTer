@@ -317,6 +317,7 @@ module m3_system
 
   output logic        ce_pix,
   output logic        v_hs, v_vs, v_hblank, v_vblank,
+  output logic [1:0]  v_show,        // bonna79: the 3D frame on show (r3d_cmd show_buf), the 15 kHz converter's image tag
   output logic [7:0]  v_r, v_g, v_b,
   input  logic        overlay_en,
   input  logic        fps_en,        // the frame counter (FPS) shown
@@ -1034,6 +1035,7 @@ module m3_system
   logic        g_start, g_busy, f_ready, f_begin, r_busy, show_3d;
   logic        f_end /* verilator public_flat_rd */, r_done /* verilator public_flat_rd */;
   logic [1:0]  f_buf /* verilator public_flat_rd */, show_buf;
+  assign v_show = show_buf;
   logic [15:0] n_draw, n_drop, n_runs, n_copy, n_tex_up, n_tex_skip;
   r3d_cmd #(.HDP(R3_HDP)) u_r3cmd (
     .clk, .rst(rst_r3), .h_go, .h_rdy, .h_we, .h_addr, .h_dec, .h_wdata, .h_rv, .h_rdata,
