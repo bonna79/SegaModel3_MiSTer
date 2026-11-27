@@ -388,7 +388,13 @@ wire [2:0] sdr_cap2 = (status[76:75] == 2'd1) ? 3'd1 : (status[76:75] == 2'd2) ?
 `else
 wire [2:0] sdr_cap2 = 3'd2;
 `endif
-m3_system #(.CLK_HZ(SYS_HZ), .CPI_MON(1'b0), .INPUTS(INPUTS), .INP_LEAN(INP_LEAN), .SDR_BXOR(1'b1), .SDR_L16(1'b1), .SDR_LW1(1'b1),
+// M3_MEMDIAG (bonna79, board measurement build for the driving games): no analog-gun / fishing input profiles, for the area
+`ifdef M3_MEMDIAG
+localparam bit INP_GF = 1'b0;
+`else
+localparam bit INP_GF = 1'b1;
+`endif
+m3_system #(.CLK_HZ(SYS_HZ), .CPI_MON(1'b0), .INPUTS(INPUTS), .INP_LEAN(INP_LEAN), .INP_GUN(INP_GF), .INP_FISH(INP_GF), .SDR_BXOR(1'b1), .SDR_L16(1'b1), .SDR_LW1(1'b1),
             .SDR_PAIR(1'b1), .SDR_PW(1'b1),
             .BUS_FAST(1'b1), .BUS_R3P(1'b1), .SDR_FREQ(1'b1), .SDR_FWD(1'b1), .SDR_FDSP(1'b1),
             .SDR_PW_DLY(8), .ISB(1'b1), .W2(CPU_SDR2), .SDR_CAPCLK(1'b1), .SDR_CAPPIPE(1'b1), .DDR_OREG(1'b1), .SDR_OPIPE(1'b1), .SDR2_CAPX(1),
