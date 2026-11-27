@@ -1,6 +1,15 @@
 derive_pll_clocks
 derive_clock_uncertainty
 
+# our fork (Daytona 2 140 MHz release): the fitter alone sees 0.3 ns more setup uncertainty on the system clock,
+# so it keeps margin on many near-critical paths instead of only the worst; timing analysis (quartus_sta) and the
+# reported slacks use the true constraint
+if {[catch {set m3_fx $::quartus(nameofexecutable)}]} { set m3_fx "" }
+if {[string equal $m3_fx "quartus_fit"]} {
+	set m3_sysclk [get_clocks -nowarn {*|pll|pll_inst|altera_pll_i|general[1].*|divclk}]
+	if {[get_collection_size $m3_sysclk] > 0} { set_clock_uncertainty -add -setup -from $m3_sysclk -to $m3_sysclk 0.3 }
+}
+
 # core specific constraints
 
 # The CPU's reset crosses from the template's 20 MHz domain through a 3-flop
