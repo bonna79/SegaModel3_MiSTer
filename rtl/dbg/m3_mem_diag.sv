@@ -55,7 +55,7 @@ module m3_mem_diag #(
     if (rst) begin in_q <= 1'b0; rd_q <= 1'b0; end
     else if (start) begin in_q <= 1'b1; rd_q <= rd_s; end
     else if (in_q && (rd_q ? rv_q : ack_q)) in_q <= 1'b0;
-  logic [12:0][31:0] c;
+  logic [12:0][27:0] c;                  // 28 bits: a second is at most 140 M clocks
   wire [12:0] inc;
   assign inc[0]  = ev_q[0];
   assign inc[1]  = ev_q[7];
@@ -75,10 +75,10 @@ module m3_mem_diag #(
     if (rst || tick) begin
       c <= '0; dtlb <= '0; utlb <= '0;
       if (tick) begin
-        for (int i = 0; i < 13; i++) o[i] <= (i == 3) ? {dtlb, utlb[19:4]} : c[i];
+        for (int i = 0; i < 13; i++) o[i] <= (i == 3) ? {dtlb, utlb[19:4]} : 32'(c[i]);
       end
     end else begin
-      for (int i = 0; i < 13; i++) if (inc[i]) c[i] <= c[i] + 32'd1;
+      for (int i = 0; i < 13; i++) if (inc[i]) c[i] <= c[i] + 28'd1;
       if (mmu_q[0] && dtlb != 16'hFFFF) dtlb <= dtlb + 16'd1;
       if (mmu_q[4] && utlb != 20'hFFFFF) utlb <= utlb + 20'd1;
     end
