@@ -22,10 +22,12 @@
 // (265 + 265 lines) a pixel every 7 clocks: Model 2's 547/5300 and 1/10 of its 100 MHz clock with 70 in place of
 // 100. 3710 / 547 = 6.8 clocks a pixel at the most, above the converter's 5 (a pixel's two ring reads and blend).
 //
-// The ring: 15 lines (the least the 15.7 kHz rate can use, m2_scan15 "the ring") of CW bits a channel. CW 6 in the
-// build: a line a 512 x 20 block, 15 M10K (20 at Model 2's 16 x 8 bits; the Model 3 build has 16 to spare), and
-// MiSTer's analogue VGA DAC takes six bits a channel. The bench (sim/video/tb_m2_scan15.sv, GLUE) checks this
-// module's outputs against the converter driven by the bench's own enables, clock for clock.
+// The ring: Model 2's 16 lines at its D_PX, of CW bits a channel. 15 lines, the least the 15.7 kHz rate can use
+// steady, is not enough there once the pairing swaps the fields (an O field read half a line either side of D_PX):
+// the bench's pairing runs at 15 lines read rows already overwritten. CW 6 in the build: 8192 x 18 is 16 M10K
+// (2048 x 5 blocks, 4 wide and 4 deep; 20 at Model 2's 8 bits), and MiSTer's analogue VGA DAC takes six bits a
+// channel. CW 5 is 12 M10K (3 wide). The bench (sim/video/tb_m2_scan15.sv, GLUE) checks this module's outputs
+// against the converter driven by the bench's own enables, clock for clock.
 //
 // The OSD's bits come in raw (hps_io's status, on clk_sys) and are synchronised here; the image tag is the 3D frame
 // on show (r3d_cmd's show_buf), which changes in the vertical blank.
@@ -33,7 +35,8 @@
 `timescale 1ns/1ps
 
 module m3_scan15_out #(
-  parameter int unsigned CW = 6
+  parameter int unsigned CW   = 6,
+  parameter int unsigned RING = 16
 ) (
   input  logic        clk,          // clk_hps
   input  logic        rst_n,        // memory reset, synchronised to clk
@@ -80,10 +83,7 @@ module m3_scan15_out #(
 
   logic        sc_hs, sc_vs, sc_de, sc_fld;
   logic [23:0] sc_rgb;
-  // D_PX of the 15.7 kHz rate re-centred for 15 lines (the bench's sweep at CK 70: it passes from about 5450 to 5850,
-  // and 5640 leaves 21.3 us before a word is written and 19.7 us before it is overwritten); the others keep Model 2's,
-  // with 140 us or more both ways at 15 lines
-  m2_scan15 #(.RING(15), .CW(CW), .MAXD((CW == 8) ? 2048 : 512), .DPX_I(5640)) u_conv (
+  m2_scan15 #(.RING(RING), .CW(CW), .MAXD(2048)) u_conv (
     .clk, .rst_n, .en, .img_tag(tag), .pair_en(pr_s[2]),
     .ce_in, .de_in, .vb_in, .rgb_in,
     .ce_out, .nl, .ml, .dv, .dvp,
