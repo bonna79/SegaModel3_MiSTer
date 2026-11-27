@@ -1392,7 +1392,7 @@ module m3_system
         // store bank}; geometry busy and rasteriser busy, clocks a second
         6'd8:  ov_v <= {n_draw, n_drop};  6'd9: ov_v <= {n_drop_g, n_drop_e, n_drop_f};
         6'd10: ov_v <= gq_c[0];           6'd11: ov_v <= gq_c[1];
-        6'd12: ov_v <= DMACNT ? dq_c[0] : '0;  6'd13: ov_v <= DMACNT ? dq_c[1] : '0;
+        6'd12: ov_v <= DMACNT ? dq_c[0] : {16'd0, cal_stat};  6'd13: ov_v <= DMACNT ? dq_c[1] : '0;   // our fork: row 3 col 0 = SDRAM calibration (lean)
         6'd14: ov_v <= DMACNT ? dq_c[2] : '0;  6'd15: ov_v <= DMACNT ? dq_c[3] : '0;
         6'd16: ov_v <= DMACNT ? dq_c[4] : '0;  6'd17: ov_v <= DMACNT ? dq_c[5] : '0;
         6'd18: ov_v <= DMACNT ? dq_c[6] : '0;  6'd19: ov_v <= DMACNT ? dq_c[7] : '0;
