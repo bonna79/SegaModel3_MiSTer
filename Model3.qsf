@@ -367,9 +367,9 @@ set_global_assignment -name VERILOG_MACRO "M3_R3EMPTY=1"
 # Release builds: every debug block off together (m3_system RELEASE: the overlay and its capture, CPI_MON, FBUSY;
 # about 2,400 ALM at 100 MHz, study R105). Test builds leave this commented out.
 set_global_assignment -name VERILOG_MACRO "M3_RELEASE=1"
-# our fork: CPU diagnostic on the frame-busy overlay (rows 5-7)
-set_global_assignment -name VERILOG_MACRO "M3_FBUSY_BUILD=1"
-set_global_assignment -name VERILOG_MACRO "M3_CPUMIN=1"
+# our fork: CPU diagnostic on the frame-busy overlay (rows 5-7) -- off in the release game core (no overlay at all)
+#set_global_assignment -name VERILOG_MACRO "M3_FBUSY_BUILD=1"
+#set_global_assignment -name VERILOG_MACRO "M3_CPUMIN=1"
 set_global_assignment -name VERILOG_MACRO "M3_NO_CPUMON=1"
 set_global_assignment -name VERILOG_MACRO "M3_NO_DMACNT=1"
 # The cabinet's driving block without Model 2's "Steering", "Steering smoothing" and "Analog control"
