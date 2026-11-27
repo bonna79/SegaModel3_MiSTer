@@ -19,9 +19,11 @@
 //   o[8]  port 0 pending while another port is in flight
 //   o[9]  port 1 in flight (tile generator)    o[10] ports 2 + 3 in flight   o[11] ports 4 + 5 in flight
 //   o[12] port 0 in flight
+// LITE = 1 (the board build, for the area): o[3], o[6], o[10], o[12] read 0 (synthesis drops their counters).
 // Every input is registered once; nothing here feeds back into the design.
 module m3_mem_diag #(
-  parameter int CLK_HZ = 140_000_000
+  parameter int CLK_HZ = 140_000_000,
+  parameter bit LITE   = 1'b1
 ) (
   input  logic        clk,
   input  logic        rst,
@@ -63,19 +65,19 @@ module m3_mem_diag #(
   assign inc[3]  = 1'b0;
   assign inc[4]  = start && rd_s;
   assign inc[5]  = in_q && rd_q;
-  assign inc[6]  = start && !rd_s;
+  assign inc[6]  = !LITE && start && !rd_s;
   assign inc[7]  = pend_q[0] && !fly_q[0];
   assign inc[8]  = pend_q[0] && !fly_q[0] && |fly_q[5:1];
   assign inc[9]  = fly_q[1];
-  assign inc[10] = fly_q[2] || fly_q[3];
+  assign inc[10] = !LITE && (fly_q[2] || fly_q[3]);
   assign inc[11] = fly_q[4] || fly_q[5];
-  assign inc[12] = fly_q[0];
+  assign inc[12] = !LITE && fly_q[0];
   logic [15:0] dtlb; logic [19:0] utlb;
   always_ff @(posedge clk) begin
     if (rst || tick) begin
       c <= '0; dtlb <= '0; utlb <= '0;
       if (tick) begin
-        for (int i = 0; i < 13; i++) o[i] <= (i == 3) ? {dtlb, utlb[19:4]} : 32'(c[i]);
+        for (int i = 0; i < 13; i++) o[i] <= (i == 3) ? (LITE ? 32'd0 : {dtlb, utlb[19:4]}) : 32'(c[i]);
       end
     end else begin
       for (int i = 0; i < 13; i++) if (inc[i]) c[i] <= c[i] + 28'd1;
