@@ -1,0 +1,90 @@
+# Build Model3.rbf with Quartus Prime Lite 17.0 on a GitHub-hosted runner,
+# using the Quartus image MiSTer-devel's own CI uses (theypsilon/quartus-lite-c5).
+# Intel's direct installer URLs now answer 403 to scripted downloads.
+# Started by hand (Actions tab -> "Quartus build" -> Run workflow) or by a
+# push to a ci-* branch.
+name: Quartus build
+
+on:
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: Fitter seed (Model3.qsf has 1)
+        default: "1"
+      image:
+        description: Quartus image tag (17.0 or 17.0.2)
+        default: "17.0"
+  push:
+    branches: ["ci-*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    env:
+      IMAGE: theypsilon/quartus-lite-c5:${{ github.event.inputs.image || '17.0' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pull Quartus image
+        run: docker pull "$IMAGE"
+
+      - name: Quartus version
+        run: docker run --rm "$IMAGE" quartus_sh --version || docker run --rm "$IMAGE" -- quartus_sh --version
+
+      - name: Set fitter seed
+        run: |
+          SEED="${{ github.event.inputs.seed }}"
+          if [ -n "$SEED" ] && [ "$SEED" != "1" ]; then
+            sed -i "s/^set_global_assignment -name SEED .*/set_global_assignment -name SEED $SEED/" Model3.qsf
+          fi
+          grep -n "name SEED" Model3.qsf
+
+      - name: Compile
+        run: |
+          docker run --rm -v "$PWD:/project" -w /project --user "$(id -u):$(id -g)" "$IMAGE" \
+            quartus_sh --flow compile Model3
+
+      - name: Fit and timing summary
+        if: always()
+        run: |
+          cat output_files/Model3.fit.summary || true
+          grep -m1 -B2 -A8 "Error (170012)" output_files/Model3.fit.rpt || true
+          # worst slack per clock and corner, readable from the job log
+          grep -B1 -A2 "^Type" output_files/Model3.sta.summary | grep -E "Type|Slack" | paste - - | grep -E "Setup|Hold|Recovery" || true
+
+      - name: DSP placement (study R207: no r3d_ block in the far columns X54 / X86)
+        if: always()
+        run: |
+          f=output_files/Model3.fit.rpt
+          echo "r3d_ DSP lines naming X54/X86: $(grep -E 'DSP_X(54|86)_' $f 2>/dev/null | grep -c 'r3d_')"
+          grep -E 'DSP_X(54|86)_' $f 2>/dev/null | grep 'r3d_' | head -20 || true
+          echo "== m2_scan15 DSP lines"; grep -E 'm2_scan15.*DSP_X|DSP_X.*m2_scan15' $f 2>/dev/null | head -10 || true
+
+      - name: Sound bridge timing
+        if: always()
+        run: |
+          if [ -f ci/snd_timing.tcl ]; then
+            docker run --rm -v "$PWD:/project" -w /project --user "$(id -u):$(id -g)" "$IMAGE" \
+              quartus_sta -t ci/snd_timing.tcl > /dev/null 2>&1 || true
+            for f in snd_setup_to snd_setup_from snd_hold_to snd_recovery_to; do echo "== $f"; cat $f.rpt 2>/dev/null | head -40; done
+          fi
+
+      - name: Core name (ci/core_name, e.g. model3daytona)
+        if: always()
+        run: |
+          N=Model3
+          if [ -f ci/core_name ]; then N=$(tr -d ' \n' < ci/core_name); fi
+          [ -f output_files/Model3.rbf ] && [ "$N" != Model3 ] && cp output_files/Model3.rbf "output_files/$N.rbf" || true
+          echo "CORE_NAME=$N" >> "$GITHUB_ENV"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ${{ env.CORE_NAME }}-${{ github.sha }}
+          path: |
+            output_files/${{ env.CORE_NAME }}.rbf
+            output_files/*.summary
+            output_files/*.sta.rpt
+            output_files/*.fit.rpt
+          if-no-files-found: warn
