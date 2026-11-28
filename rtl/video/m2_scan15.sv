@@ -141,6 +141,13 @@ module m2_scan15 #(
   input  logic        ml,              // 268/269 (else 273/274)
   input  logic        dv,              // R983: 265 + 265 lines, 10 clocks a pixel (overrides nl / ml)
   input  logic        dvp,             // R983: with dv, progressive (240p, every field field 0); else 480i
+  // Model 3 (bonna79): the picture's place on a CRT, -8..+6 (two's complement; +7 is taken as +6). The syncs move,
+  // the picture and every count behind it do not: hsh n puts the hsync 4n output pixels earlier (the picture 4n
+  // pixels right), vsh n the vsync n lines earlier (the picture n lines down). Over -8..+6 both stay inside their
+  // blanking in every mode (hsync from 496 to 616 of the blank 496..655; vsync from line 240 at the earliest, the
+  // first blank line, to the middle of line 261 at the latest, ml's 268/269-line fields). 0 and 0: the timing as before.
+  input  logic  [3:0] hsh,
+  input  logic  [3:0] vsh,
   output logic        o_hs,
   output logic        o_vs,
   output logic        o_de,
@@ -257,7 +264,12 @@ module m2_scan15 #(
   wire [9:0] n0  = dv ? 10'd265 : nl ? 10'd263 : ml ? 10'd269 : 10'd274;
   wire [9:0] vt  = (field && !dv) ? n0 - 10'd1 : n0;
   wire [9:0] vss = dv ? 10'd248 : nl ? 10'd247 : ml ? 10'd250 : 10'd253;   // field 0's vsync start (3 lines), before a field 1
-  wire [9:0] vse = vss + 10'd3;
+  // bonna79: the CRT position (hsh / vsh above), +7 taken as +6
+  wire [3:0] hsh_c = (hsh == 4'd7) ? 4'd6 : hsh;
+  wire [3:0] vsh_c = (vsh == 4'd7) ? 4'd6 : vsh;
+  wire [9:0] hsx = {{4{hsh_c[3]}}, hsh_c, 2'b00};          // 4 x hsh, sign-extended
+  wire [9:0] vsa = vss - {{6{vsh_c[3]}}, vsh_c};
+  wire [9:0] vse = vsa + 10'd3;
 
   // The align loads the counters the free-running output holds D_PX pixels before an E field's first line: DL lines
   // before the end of the O field (N0 - 1 lines if it is field 1, N0 if field 0), DL * HT - D_PX pixels into that line.
@@ -273,7 +285,7 @@ module m2_scan15 #(
   // The vsync is placed for the field after it: 1/2 line nearer that field's first line when it is field 0. A field 1
   // (one line shorter) holds its vsync a line earlier. Alternating labels give field 0's at vss and field 1's at
   // vss - 1/2, as before; a repeated label puts it on a whole line (two 1s) or a half line (two 0s).
-  wire        hs_c  = (hcnt >= 10'(HSS)) && (hcnt < 10'(HSE));
+  wire        hs_c  = (hcnt >= 10'(HSS) - hsx) && (hcnt < 10'(HSE) - hsx);
   wire [19:0] vpos  = {vcnt, hcnt};
   // R983: dv's fields are equal, so its half line comes from the vsync alone: placed for a field 1, half a line early
   // ({vss - 1, HT/2}); for a field 0, on the line (vss). Vsync to vsync alternates 265.5 / 264.5 lines, two of them
@@ -281,7 +293,7 @@ module m2_scan15 #(
   // interlaces. 240p (nxt always 0): vss, whole, every field.
   wire [9:0]  vs_h  = dv ? (nxt ? 10'(HT >> 1) : 10'd0) : nxt ? 10'd0 : 10'(HT >> 1);
   wire [9:0]  vs_l  = dv ? 10'(nxt) : 10'(field);
-  wire        vs_c  = (vpos >= {vss - vs_l, vs_h}) && (vpos < {vse - vs_l, vs_h});
+  wire        vs_c  = (vpos >= {vsa - vs_l, vs_h}) && (vpos < {vse - vs_l, vs_h});
   wire        de_c  = (hcnt < 10'(W)) && (vcnt < 10'(VIS));
 
   // The line on show is frame row m = 2 * vcnt + field: source rows s = floor(4m/5) and s + 1, fraction r = 4m mod 5.

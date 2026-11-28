@@ -128,6 +128,9 @@ localparam CONF_STR = {
 	"O[61:60],15kHz lines,273/274 (15.7kHz),268/269 (15.4kHz),262/263 (15.1kHz),265 (15.2kHz DV);",
 	"O[77],15kHz DV scan,480i,240p;",
 	"O[67],15kHz pairing,Auto,Off;",
+	// bonna79: the picture's place on the CRT (the syncs move inside their blanking; m2_scan15 hsh / vsh)
+	"O[97:94],15kHz H position,0,+1,+2,+3,+4,+5,+6,-8,-7,-6,-5,-4,-3,-2,-1;",
+	"O[101:98],15kHz V position,0,+1,+2,+3,+4,+5,+6,-8,-7,-6,-5,-4,-3,-2,-1;",
 `endif
 	// the SDRAM read capture (m2_sdram rd_lat_sel, n = CL + n), per controller, for the board's margin above 120 MHz
 	// (R184): change, then Reset
@@ -528,7 +531,7 @@ reg  [2:0] s15_rst_s = 3'b000;
 always @(posedge clk_hps) s15_rst_s <= {s15_rst_s[1:0], mem_rst_n};
 m3_scan15_out #(.CW(6)) u_scan15 (
 	.clk(clk_hps), .rst_n(s15_rst_s[2]), .osd_15k(status[42]), .osd_lines(status[61:60]), .osd_dvp(status[77]),
-	.osd_pair_off(status[67]), .show(v_show),
+	.osd_pair_off(status[67]), .osd_hpos(status[97:94]), .osd_vpos(status[101:98]), .show(v_show),
 	.ce_in(vh_ce), .rgb_in(vh[27:4]), .hs_in(vh[3]), .vs_in(vh[2]), .de_in(vh[1]), .vb_in(vh[0]),
 	.ce_pix(CE_PIXEL), .rgb({VGA_R, VGA_G, VGA_B}), .hs(VGA_HS), .vs(VGA_VS), .de(VGA_DE), .f1(vga_f1));
 `else
