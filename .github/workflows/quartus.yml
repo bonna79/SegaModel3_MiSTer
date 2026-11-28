@@ -53,7 +53,7 @@ jobs:
           # worst slack per clock and corner, readable from the job log
           grep -B1 -A2 "^Type" output_files/Model3.sta.summary | grep -E "Type|Slack" | paste - - | grep -E "Setup|Hold|Recovery" || true
 
-      - name: DSP placement (study R207: no r3d_ block in the far columns X54 / X86)
+      - name: "DSP placement, study R207 - no r3d_ block in the far columns X54 or X86"
         if: always()
         run: |
           f=output_files/Model3.fit.rpt
