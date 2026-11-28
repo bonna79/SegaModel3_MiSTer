@@ -44,6 +44,8 @@ module m3_scan15_out #(
   input  logic [1:0]  osd_lines,    // status[61:60]: 0 273/274, 1 268/269, 2 262/263, 3 265 DV
   input  logic        osd_dvp,      // status[77]: DV as 240p
   input  logic        osd_pair_off, // status[67]: pairing off
+  input  logic [3:0]  osd_hpos,     // status[97:94]: picture right in 4-pixel steps, entries 0..+6, -8..-1
+  input  logic [3:0]  osd_vpos,     // status[101:98]: picture down in lines, the same entries
   input  logic [1:0]  show,         // the 3D frame on show
 
   input  logic        ce_in,        // the native picture: one sample a pixel
@@ -56,7 +58,14 @@ module m3_scan15_out #(
   output logic        f1            // VGA_F1: the converter's field at 15 kHz, 0 at 24 kHz
 );
   logic [2:0] en_s, nl_s, ml_s, dv_s, dvp_s, pr_s;
+  // the OSD's position entries: 0..6 are 0..+6, 7..14 are -8..-1 (index - 15), 15 (not offered) 0
+  function automatic logic [3:0] pos(input logic [3:0] i);
+    return (i <= 4'd6) ? i : (i == 4'd15) ? 4'd0 : i - 4'd15;
+  endfunction
+  logic [3:0] hp_s, vp_s;               // the position moves the syncs only, so a register is synchroniser enough
   always_ff @(posedge clk) begin
+    hp_s  <= pos(osd_hpos);
+    vp_s  <= pos(osd_vpos);
     en_s  <= {en_s[1:0],  osd_15k};
     nl_s  <= {nl_s[1:0],  osd_lines == 2'd2};
     ml_s  <= {ml_s[1:0],  osd_lines == 2'd1};
@@ -86,7 +95,7 @@ module m3_scan15_out #(
   m2_scan15 #(.RING(RING), .CW(CW), .MAXD(2048)) u_conv (
     .clk, .rst_n, .en, .img_tag(tag), .pair_en(pr_s[2]),
     .ce_in, .de_in, .vb_in, .rgb_in,
-    .ce_out, .nl, .ml, .dv, .dvp,
+    .ce_out, .nl, .ml, .dv, .dvp, .hsh(hp_s), .vsh(vp_s),
     .o_hs(sc_hs), .o_vs(sc_vs), .o_de(sc_de), .o_field(sc_fld), .o_rgb(sc_rgb));
 
   assign ce_pix = en ? ce_out : ce_in;

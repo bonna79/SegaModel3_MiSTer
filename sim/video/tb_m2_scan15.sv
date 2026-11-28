@@ -40,7 +40,12 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
                       // are the same on every clock.
                       // GLUE = 1 adds Model 3's m3_scan15_out (its own enable, synchronisers and the 24/15 kHz mux)
                       // and checks its pins against this bench's converter on every clock after reset.
-                      parameter int CK = 100, parameter int CW = 8, parameter int EQ6 = 0, parameter int GLUE = 0);
+                      parameter int CK = 100, parameter int CW = 8, parameter int EQ6 = 0, parameter int GLUE = 0,
+                      // SHH / SHV (-8..+7, bonna79): a second converter with the CRT position (hsh / vsh) at these
+                      // values beside the DUT at 0 and 0; its picture, enables and field must be the DUT's on every
+                      // clock and each of its syncs the DUT's moved by -4 SHH pixels / -SHV lines (+7 taken as +6),
+                      // its hsync never over a picture pixel and its vsync never on a picture line
+                      parameter int SHH = 0, parameter int SHV = 0);
   logic clk = 1'b0;
   always #5 clk = ~clk;                     // 100 MHz
   logic rst_n = 1'b0;
@@ -132,7 +137,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
                  .pair_en(pe != 0),
 `endif
                  .ce_in(ce_in), .de_in(de_s), .vb_in(vb_s),
-                 .rgb_in(rgb_s), .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .o_hs(o_hs), .o_vs(o_vs), .o_de(o_de),
+                 .rgb_in(rgb_s), .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .hsh(4'd0), .vsh(4'd0), .o_hs(o_hs), .o_vs(o_vs), .o_de(o_de),
                  .o_field(o_field), .o_rgb(o_rgb));
   // the design's own values, from an instance at its defaults (inputs idle)
   m2_scan15 dflt (.clk(1'b0), .rst_n(1'b0), .en(1'b0), .img_tag(4'd0),
@@ -140,7 +145,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
                   .pair_en(1'b1),
 `endif
                   .ce_in(1'b0), .de_in(1'b0), .vb_in(1'b1),
-                  .rgb_in(24'd0), .ce_out(1'b0), .nl(1'b0), .ml(1'b0), .dv(1'b0), .dvp(1'b0), .o_hs(), .o_vs(), .o_de(), .o_field(), .o_rgb());
+                  .rgb_in(24'd0), .ce_out(1'b0), .nl(1'b0), .ml(1'b0), .dv(1'b0), .dvp(1'b0), .hsh(4'd0), .vsh(4'd0), .o_hs(), .o_vs(), .o_de(), .o_field(), .o_rgb());
   // ---- EQ6: the n-bit ring against the 8-bit one on an n-bit picture
   function automatic logic [7:0] qch(input logic [7:0] c);
     for (int i = 0; i < 8; i++) qch[7 - i] = c[7 - (i % ((EQ6 != 0) ? EQ6 : 8))];
@@ -154,10 +159,10 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
   generate if (EQ6 != 0) begin : g_eq6
     m2_scan15 #(.RING(RING), .DPX_I(DPX_I), .DPX_M(DPX_M), .DPX_N(DPX_N), .DPX_D(DPX_D), .CW(8)) e8 (.clk(clk), .rst_n(rst_n),
       .en(1'b1), .img_tag(tag), .pair_en(pe != 0), .ce_in(ce_in), .de_in(de_s), .vb_in(vb_s), .rgb_in(q6(rgb_s)),
-      .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .o_hs(e8_hs), .o_vs(e8_vs), .o_de(e8_de), .o_field(e8_f), .o_rgb(e8_rgb));
+      .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .hsh(4'd0), .vsh(4'd0), .o_hs(e8_hs), .o_vs(e8_vs), .o_de(e8_de), .o_field(e8_f), .o_rgb(e8_rgb));
     m2_scan15 #(.RING(RING), .DPX_I(DPX_I), .DPX_M(DPX_M), .DPX_N(DPX_N), .DPX_D(DPX_D), .CW((EQ6 != 0) ? EQ6 : 8)) e6 (.clk(clk), .rst_n(rst_n),
       .en(1'b1), .img_tag(tag), .pair_en(pe != 0), .ce_in(ce_in), .de_in(de_s), .vb_in(vb_s), .rgb_in(q6(rgb_s)),
-      .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .o_hs(e6_hs), .o_vs(e6_vs), .o_de(e6_de), .o_field(e6_f), .o_rgb(e6_rgb));
+      .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .hsh(4'd0), .vsh(4'd0), .o_hs(e6_hs), .o_vs(e6_vs), .o_de(e6_de), .o_field(e6_f), .o_rgb(e6_rgb));
     always @(posedge clk) if (rst_n) begin
       eq_n++;
       if ({e8_hs, e8_vs, e8_de, e8_f, e8_rgb} !== {e6_hs, e6_vs, e6_de, e6_f, e6_rgb}) begin
@@ -185,6 +190,61 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
       end
     end
   end endgenerate
+
+
+  // ---- SHH / SHV: the CRT position against the DUT at 0 and 0
+  localparam int SHH_C = (SHH == 7) ? 6 : SHH, SHV_C = (SHV == 7) ? 6 : SHV;
+  logic        s_hs, s_vs, s_de, s_f, s_hs_d, s_vs_d, d_hs_d, d_vs_d, line_de, line_vs;
+  logic [23:0] s_rgb;
+  longint      sh_n = 0, sh_bad = 0, sh_hs_n = 0, sh_hs_bad = 0, sh_vs_n = 0, sh_vs_bad = 0, sh_over = 0, sh_w_bad = 0;
+  longint      s_lr = 0, pc = 0, d_hr[$], s_hr[$], d_vr[$], s_vr[$], d_hf = 0, s_hf = 0, d_vf = 0, s_vf = 0;
+  generate if (SHH != 0 || SHV != 0) begin : g_sh
+    m2_scan15 #(.RING(RING), .DPX_I(DPX_I), .DPX_M(DPX_M), .DPX_N(DPX_N), .DPX_D(DPX_D), .CW(CW)) shd (.clk(clk), .rst_n(rst_n),
+      .en(1'b1), .img_tag(tag), .pair_en(pe != 0), .ce_in(ce_in), .de_in(de_s), .vb_in(vb_s), .rgb_in(rgb_s),
+      .ce_out(ce_out), .nl(nl), .ml(ml), .dv(dv), .dvp(dvp), .hsh(4'(SHH)), .vsh(4'(SHV)),
+      .o_hs(s_hs), .o_vs(s_vs), .o_de(s_de), .o_field(s_f), .o_rgb(s_rgb));
+    initial begin s_hs_d = 0; s_vs_d = 0; d_hs_d = 0; d_vs_d = 0; line_de = 0; line_vs = 0; end
+    always @(posedge clk) if (rst_n) begin
+      sh_n++;
+      if ({s_de, s_f, s_rgb} !== {o_de, o_field, o_rgb}) begin
+        sh_bad++;
+        if (sh_bad <= 3) $display("SHIFT picture differs at %0t", $time);
+      end
+      if (ce_out) begin
+        // pixel counts are taken one enable after the output registers took them (both outputs alike)
+        pc++;
+        if (s_hs && s_de) sh_over++;                       // hsync over a picture pixel
+        if (o_hs && !d_hs_d) begin
+          d_hr.push_back(pc);
+          // a line ends at the DUT's hsync: a line with picture must not carry the shifted vsync
+          if (line_de && line_vs) sh_over++;
+          line_de = 0; line_vs = 0;
+        end
+        if (s_de) line_de = 1;
+        if (s_vs) line_vs = 1;
+        if (s_hs && !s_hs_d) begin s_hr.push_back(pc); s_lr = pc; end
+        if (o_vs && !d_vs_d) d_vr.push_back(pc);
+        if (s_vs && !s_vs_d) s_vr.push_back(pc);
+        if (!o_hs && d_hs_d) d_hf = pc;
+        if (!s_hs && s_hs_d) begin s_hf = pc; if (s_lr == 0 || pc - s_lr != 64) sh_w_bad++; end
+        // pair the k-th rises: the shifted one is 4 SHH pixels earlier (a line is 656), the vsync SHV lines earlier
+        while (d_hr.size() > 0 && s_hr.size() > 0) begin
+          sh_hs_n++;
+          if (d_hr[0] - s_hr[0] != 4 * SHH_C) begin sh_hs_bad++; if (sh_hs_bad <= 3) $display("SHIFT hsync %0d vs %0d", s_hr[0], d_hr[0]); end
+          void'(d_hr.pop_front()); void'(s_hr.pop_front());
+        end
+        while (d_vr.size() > 0 && s_vr.size() > 0) begin
+          sh_vs_n++;
+          if (d_vr[0] - s_vr[0] != 656 * SHV_C) begin sh_vs_bad++; if (sh_vs_bad <= 3) $display("SHIFT vsync %0d vs %0d", s_vr[0], d_vr[0]); end
+          void'(d_vr.pop_front()); void'(s_vr.pop_front());
+        end
+        s_hs_d = s_hs; s_vs_d = s_vs; d_hs_d = o_hs; d_vs_d = o_vs;
+      end
+    end
+  end endgenerate
+  wire sh_ok = (SHH == 0 && SHV == 0) ||
+               (sh_n > 1000000 && sh_bad == 0 && sh_hs_n > 5000 && sh_hs_bad == 0 && sh_vs_n > 6 && sh_vs_bad == 0 &&
+                sh_over == 0 && sh_w_bad == 0);
 
   wire design_vals = (RING == dflt.RING) && (DPX_I == dflt.DPX_I) && (DPX_M == dflt.DPX_M) && (DPX_N == dflt.DPX_N) && (DPX_D == dflt.DPX_D);
 
@@ -461,6 +521,8 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
     $display("  margin before the data is written (smallest, ns): %0d   margin before it is overwritten (smallest, ns): %0d",
              min_avail * 100 / CK, min_over * 100 / CK);
     if (GLUE != 0) $display("  GLUE: m3_scan15_out against the converter: %0d clocks compared, %0d differ", gl_n, gl_bad);
+    if (SHH != 0 || SHV != 0) $display("  SHIFT %0d/%0d: picture %0d clocks, %0d differ; hsync %0d pairs, %0d off; vsync %0d pairs, %0d off; over picture %0d, hsync width bad %0d",
+                                       SHH, SHV, sh_n, sh_bad, sh_hs_n, sh_hs_bad, sh_vs_n, sh_vs_bad, sh_over, sh_w_bad);
     if (EQ6 != 0) $display("  EQ6: %0d-bit ring against 8-bit on a %0d-bit picture: %0d clocks compared, %0d differ", EQ6, EQ6, eq_n, eq_bad);
     if (dv && !dvp) begin
       // R983, 480i: whole clocks (every line 6,560, every pixel 10); equal fields, so every vsync interval is half a
@@ -473,7 +535,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
           hs_clk_min == 656 * (CK / 10) && hs_clk_max == 656 * (CK / 10) && ce_gap_min == CK / 10 && ce_gap_max == CK / 10 && fld1_seen > 100000 &&
           to_de_ok[0] && to_de_ok[1] && to_de[1] - to_de[0] == 328 && min_avail > 1000 && min_over > 1000 &&
           (rnd != 0 || ev_rep <= ((cad == 2) ? 1 : 0)) &&
-          !(rnd == 0 && pe != 0 && cad == 2 && nframes >= 70 && (pairs < 10 || pair_bad != 0))) $display("%s", (EQ6 == 0 || (eq_n > 1000000 && eq_bad == 0)) && (GLUE == 0 || (gl_n > 1000000 && gl_bad == 0)) ? "PASS" : "FAIL");
+          !(rnd == 0 && pe != 0 && cad == 2 && nframes >= 70 && (pairs < 10 || pair_bad != 0))) $display("%s", (EQ6 == 0 || (eq_n > 1000000 && eq_bad == 0)) && (GLUE == 0 || (gl_n > 1000000 && gl_bad == 0)) && sh_ok ? "PASS" : "FAIL");
       else $display("FAIL");
     end else if (dv) begin
       // R983, 240p: whole clocks: every line 6,560 clocks, every pixel 10, every vsync interval one native frame,
@@ -482,7 +544,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
           de_max == 496 && de_min == 496 && hs_per_bad == 0 && field_lines_bad == 0 && nint > 6 && al_n > 0 &&
           al_moved == 0 && ev_vsd == 0 && vs_bad == 0 && hs_clk_min == 656 * (CK / 10) && hs_clk_max == 656 * (CK / 10) &&
           ce_gap_min == CK / 10 && ce_gap_max == CK / 10 && fld1_seen == 0 && to_de_ok[0] && !to_de_ok[1] &&
-          min_avail > 1000 && min_over > 1000) $display("%s", (EQ6 == 0 || (eq_n > 1000000 && eq_bad == 0)) && (GLUE == 0 || (gl_n > 1000000 && gl_bad == 0)) ? "PASS" : "FAIL");
+          min_avail > 1000 && min_over > 1000) $display("%s", (EQ6 == 0 || (eq_n > 1000000 && eq_bad == 0)) && (GLUE == 0 || (gl_n > 1000000 && gl_bad == 0)) && sh_ok ? "PASS" : "FAIL");
       else $display("FAIL");
     end else
     if (fails == 0 && ring_fails == 0 && step_fails == 0 && checked > 100000 && hs_max == 64 && hs_min == 64 &&
@@ -493,7 +555,7 @@ module tb_m2_scan15 #(parameter int RING = 16, parameter int DPX_I = 5840, param
         al_moved == 0 && ev_vsd == ev_rep && ev_vsd_norep == 0 && ev_vsd_big == 0 &&
         (rnd != 0 || ev_rep <= ((cad == 2) ? 1 : 0)) && (rnd != 0 || vs_bad <= ((cad == 2) ? 1 : 0)) &&
         min_avail > 1000 && min_over > 1000 &&
-        !(rnd == 0 && pe != 0 && cad == 2 && nframes >= 70 && (pairs < 10 || pair_bad != 0))) $display("%s", (EQ6 == 0 || (eq_n > 1000000 && eq_bad == 0)) && (GLUE == 0 || (gl_n > 1000000 && gl_bad == 0)) ? "PASS" : "FAIL");
+        !(rnd == 0 && pe != 0 && cad == 2 && nframes >= 70 && (pairs < 10 || pair_bad != 0))) $display("%s", (EQ6 == 0 || (eq_n > 1000000 && eq_bad == 0)) && (GLUE == 0 || (gl_n > 1000000 && gl_bad == 0)) && sh_ok ? "PASS" : "FAIL");
     else $display("FAIL");
     $finish;
   end
