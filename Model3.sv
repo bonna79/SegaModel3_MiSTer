@@ -529,7 +529,7 @@ assign CLK_VIDEO = clk_hps;
 // "Video: 15kHz interlaced"); at 24 kHz the pins carry vh as below
 reg  [2:0] s15_rst_s = 3'b000;
 always @(posedge clk_hps) s15_rst_s <= {s15_rst_s[1:0], mem_rst_n};
-m3_scan15_out #(.CW(6)) u_scan15 (
+m3_scan15_out #(.CW(5)) u_scan15 (
 	.clk(clk_hps), .rst_n(s15_rst_s[2]), .osd_15k(status[42]), .osd_lines(status[61:60]), .osd_dvp(status[77]),
 	.osd_pair_off(status[67]), .osd_hpos(status[97:94]), .osd_vpos(status[101:98]), .show(v_show),
 	.ce_in(vh_ce), .rgb_in(vh[27:4]), .hs_in(vh[3]), .vs_in(vh[2]), .de_in(vh[1]), .vb_in(vh[0]),
